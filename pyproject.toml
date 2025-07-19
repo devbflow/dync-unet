@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "lightning>=2.5.2",
     "pip>=25.1.1",
+    "rasterio>=1.4.3",
     "torch>=2.7.1",
     "torchvision>=0.22.1",
     "uv>=0.7.19",
