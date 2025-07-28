@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "lightning>=2.5.2",
+    "lightning[pytorch-extra]>=2.5.2",
     "pip>=25.1.1",
     "rasterio>=1.4.3",
     "torch>=2.7.1",
