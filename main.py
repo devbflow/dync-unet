@@ -1,5 +1,11 @@
+from lightning.pytorch.cli import LightningCLI
+
+from data.datamodule import OpenEarthMapRGBDataModule
+from model.lightning_model import UNetLightningModule
+
+
 def main():
-    print("Hello from dync-unet!")
+    cli = LightningCLI(UNetLightningModule, OpenEarthMapRGBDataModule)
 
 
 if __name__ == "__main__":
