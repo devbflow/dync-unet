@@ -1,83 +1,57 @@
+import lightning as pl
 import torch.nn as nn
 import torch.optim as optim
-import lightning as pl
 
 from unet_model import UNet
 
 
 class UNetLightningModule(pl.LightningModule):
-    def __init__(self, learning_rate: float = 1e-3):
+    def __init__(
+        self, conv_type: str, in_channels: int, num_classes: int, lr: float = 1e-3
+    ):
         super().__init__()
 
         self.save_hyperparameters()
 
         self.model = UNet(
-            in_channels=...,
-            num_classes=...,
+            in_channels=in_channels,
+            num_classes=num_classes,
             initial_planes=64,
             num_layers=4,
             bilinear=True,
-            conv_type="static",
+            conv_type=conv_type,
             K=None,
         )
 
         self.loss_fn = nn.CrossEntropyLoss()
 
     def forward(self, x):
-        """
-        Defines the forward pass of the model.
-        This is typically what you'd call when doing inference.
-        """
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        """
-        Defines the logic for a single training step.
-        It receives a batch of data and the batch index.
-        """
-        x, y = batch
-        y_hat = self.forward(x)
-        loss = self.loss_fn(y_hat, y)
+        imgs, masks, _ = batch
+        y_hat = self.forward(imgs)
+        loss = self.loss_fn(y_hat, masks)
 
-        self.log(
-            "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
-        )
+        self.log("train_loss", loss, on_step=True, on_epoch=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        """
-        Defines the logic for a single validation step.
-        It receives a batch of data and the batch index.
-        """
-        x, y = batch
-        y_hat = self.forward(x)
-        loss = self.loss_fn(y_hat, y)
+        imgs, masks, _ = batch
+        y_hat = self.forward(imgs)
+        loss = self.loss_fn(y_hat, masks)
 
-        self.log(
-            "val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
-        )
+        self.log("val_loss", loss, on_step=False, on_epoch=True, logger=True)
         return loss
 
     def test_step(self, batch, batch_idx):
-        """
-        Defines the logic for a single test step.
-        It receives a batch of data and the batch index.
-        """
-        x, y = batch
-        y_hat = self.forward(x)
-        loss = self.loss_fn(y_hat, y)
+        imgs, masks, _ = batch
+        y_hat = self.forward(imgs)
+        loss = self.loss_fn(y_hat, masks)
 
-        self.log(
-            "test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
-        )
+        self.log("test_loss", loss, on_step=False, on_epoch=True, logger=True)
         return loss
 
     def configure_optimizers(self):
-        """
-        Defines the optimizer(s) and learning rate scheduler(s).
-        """
-        optimizer = optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
-        # You can also add a learning rate scheduler here, e.g.:
-        # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
-        # return [optimizer], [scheduler]
+        optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr)
         return optimizer

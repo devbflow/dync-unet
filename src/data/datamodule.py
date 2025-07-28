@@ -19,7 +19,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         num_workers: int = 4,
     ):
         super().__init__()
-        # Save hyperparameters for easy access and logging
+
         self.save_hyperparameters()
 
         self.data_dir = data_dir
@@ -36,11 +36,6 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         self.test_dataset = None
 
     def setup(self, stage: str):
-        """
-        Assign train/val/test datasets for use in dataloaders.
-        This method is called on every process (e.g., on every GPU in distributed training).
-        It's ideal for creating dataset splits, applying transforms, etc.
-        """
         filenames = [
             f for f in Path(self.data_dir).rglob("*.tif") if "/images/" in str(f)
         ]
@@ -86,9 +81,6 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self):
-        """
-        Returns the DataLoader for the training set.
-        """
         if self.train_dataset is None:
             raise RuntimeError("train_dataset is not set. Call setup('fit') first.")
         print(f"[{self.__class__.__name__}] train_dataloader called.")
@@ -102,9 +94,6 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
-        """
-        Returns the DataLoader for the validation set.
-        """
         if self.val_dataset is None:
             raise RuntimeError("val_dataset is not set. Call setup('validate') first.")
         print(f"[{self.__class__.__name__}] val_dataloader called.")
@@ -116,9 +105,6 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self):
-        """
-        Returns the DataLoader for the test set.
-        """
         if self.test_dataset is None:
             raise RuntimeError("test_dataset is not set. Call setup('test') first.")
         print(f"[{self.__class__.__name__}] test_dataloader called.")
