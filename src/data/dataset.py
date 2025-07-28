@@ -1,8 +1,10 @@
 import math
+
 import numpy as np
-from torch.utils.data import Dataset
 import rasterio
 from PIL import Image
+from torch.utils.data import Dataset
+
 from . import transforms
 
 

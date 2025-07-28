@@ -1,7 +1,8 @@
 from pathlib import Path
+
 import numpy as np
-from PIL import Image
 import torch
+from PIL import Image
 
 OPENEARTHMAP_CLASS_MAPPING = {
     1: ("Bareland", (128, 0, 0)),

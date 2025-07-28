@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
+
 import lightning as pl
 import numpy as np
-
-from torch.utils.data import DataLoader
 import torchvision
+from torch.utils.data import DataLoader
 
 from data.dataset import OpenEarthMapRGBDataset
-from data.transforms import Resize, Rotate, Crop
+from data.transforms import Crop, Resize, Rotate
 
 
 class OpenEarthMapRGBDataModule(pl.LightningDataModule):
