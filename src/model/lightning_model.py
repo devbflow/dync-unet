@@ -1,8 +1,9 @@
 import lightning as pl
+import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from unet_model import UNet
+from .unet_model import UNet
 
 
 class UNetLightningModule(pl.LightningModule):
@@ -25,13 +26,14 @@ class UNetLightningModule(pl.LightningModule):
 
         self.loss_fn = nn.CrossEntropyLoss()
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
         imgs, masks, _ = batch
         y_hat = self.forward(imgs)
-        loss = self.loss_fn(y_hat, masks)
+
+        loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, logger=True)
         return loss
@@ -39,7 +41,7 @@ class UNetLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         imgs, masks, _ = batch
         y_hat = self.forward(imgs)
-        loss = self.loss_fn(y_hat, masks)
+        loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, logger=True)
         return loss
@@ -47,7 +49,7 @@ class UNetLightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         imgs, masks, _ = batch
         y_hat = self.forward(imgs)
-        loss = self.loss_fn(y_hat, masks)
+        loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("test_loss", loss, on_step=False, on_epoch=True, logger=True)
         return loss

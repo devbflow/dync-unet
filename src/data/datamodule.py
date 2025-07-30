@@ -6,8 +6,8 @@ import numpy as np
 import torchvision
 from torch.utils.data import DataLoader
 
-from data.dataset import OpenEarthMapRGBDataset
-from data.transforms import Crop, Resize, Rotate
+from .dataset import OpenEarthMapRGBDataset
+from .transforms import Crop, Resize, Rotate
 
 
 class OpenEarthMapRGBDataModule(pl.LightningDataModule):
@@ -55,7 +55,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
                 f"[{self.__class__.__name__}] setup(fit) called. Train size: {len(self.train_dataset)}"
             )
 
-        if stage == "validate":
+        if stage == "validate" or stage == "fit":
             val_filenames = [
                 str(f)
                 for f in filenames

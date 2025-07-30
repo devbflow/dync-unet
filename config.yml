@@ -10,12 +10,10 @@ trainer:
   overfit_batches: 0.0
 
 model:
-  class_path: model.lightning_model.UNetLightningModule
-  init_args:
-    conv_type: static
-    in_channels: 3
-    num_classes: 9
-    lr: 1e-3
+  conv_type: static
+  in_channels: 3
+  num_classes: 9
+  lr: 1e-3
 
 data:
   data_dir: ./

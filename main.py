@@ -1,7 +1,7 @@
 from lightning.pytorch.cli import LightningCLI
 
-from data.datamodule import OpenEarthMapRGBDataModule
-from model.lightning_model import UNetLightningModule
+from src.data.datamodule import OpenEarthMapRGBDataModule
+from src.model.lightning_model import UNetLightningModule
 
 
 def main():
