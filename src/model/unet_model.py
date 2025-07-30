@@ -19,7 +19,7 @@ def get_conv_and_kwargs(
         tuple[nn.Module, dict]: convolution Module and specific kwargs
     """
     if conv_type == "static":
-        return nn.Conv2d, {}
+        return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1}
     elif conv_type == "dynamic":
         if K is None:
             raise ValueError(
@@ -219,58 +219,29 @@ class UNet(nn.Module):
         self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)
 
         # Encoder
-        # FIXME: replace by following line later
-        # self.enc_modules = nn.ModuleList([DownBlock(self.conv, initial_planes * 2 ** i, initial_planes * 2 ** (i+1), self.conv_kwargs) for i in range(self.num_layers)])
         self.enc_modules = nn.ModuleList(
             [
                 DownBlock(
-                    self.conv, initial_planes, initial_planes * 2, self.conv_kwargs
-                ),
-                DownBlock(
-                    self.conv, initial_planes * 2, initial_planes * 4, self.conv_kwargs
-                ),
-                DownBlock(
-                    self.conv, initial_planes * 4, initial_planes * 8, self.conv_kwargs
-                ),
-                DownBlock(
-                    self.conv, initial_planes * 8, initial_planes * 16, self.conv_kwargs
-                ),
+                    self.conv,
+                    initial_planes * 2**i,
+                    initial_planes * 2 ** (i + 1),
+                    self.conv_kwargs,
+                )
+                for i in range(self.num_layers)
             ]
         )
 
         # Decoder
-        # FIXME: replace by following line later
-        # self.dec_modules = nn.ModuleList([UpBlock(self.conv, initial_planes * 2 ** j + initial_planes * 2 ** (j - 1), initial_planes * 2 ** (j - 1), self.conv_kwargs, bilinear) for j in range(self.num_layers, 0, -1)])
         self.dec_modules = nn.ModuleList(
             [
                 UpBlock(
                     self.conv,
-                    initial_planes * 16 + initial_planes * 8,
-                    initial_planes * 8,
+                    initial_planes * 2**j + initial_planes * 2 ** (j - 1),
+                    initial_planes * 2 ** (j - 1),
                     self.conv_kwargs,
                     bilinear,
-                ),
-                UpBlock(
-                    self.conv,
-                    initial_planes * 8 + initial_planes * 4,
-                    initial_planes * 4,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
-                UpBlock(
-                    self.conv,
-                    initial_planes * 4 + initial_planes * 2,
-                    initial_planes * 2,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
-                UpBlock(
-                    self.conv,
-                    initial_planes * 2 + initial_planes,
-                    initial_planes,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
+                )
+                for j in range(self.num_layers, 0, -1)
             ]
         )
 
@@ -280,12 +251,11 @@ class UNet(nn.Module):
         x_residuals = []
 
         x = self.inc(x)
-        x_residuals.append(x)
 
         # Encoder
         for i in range(len(self.enc_modules)):
-            x = self.enc_modules[i](x)
             x_residuals.append(x)
+            x = self.enc_modules[i](x)
 
         # Decoder
         for j in range(len(self.dec_modules)):
