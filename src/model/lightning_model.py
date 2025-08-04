@@ -8,20 +8,28 @@ from .unet_model import UNet
 
 class UNetLightningModule(pl.LightningModule):
     def __init__(
-        self, conv_type: str, in_channels: int, num_classes: int, lr: float = 1e-3
+        self,
+        conv_type: str,
+        in_channels: int,
+        num_classes: int,
+        num_layers: int = 4,
+        initial_planes: int = 64,
+        lr: float = 1e-3,
+        K: int | None = None,
     ):
         super().__init__()
 
         self.save_hyperparameters()
+        assert conv_type in ("static", "dynamic")
 
         self.model = UNet(
             in_channels=in_channels,
             num_classes=num_classes,
-            initial_planes=64,
-            num_layers=4,
+            initial_planes=initial_planes,
+            num_layers=num_layers,
             bilinear=True,
             conv_type=conv_type,
-            K=None,
+            K=K,
         )
 
         self.loss_fn = nn.CrossEntropyLoss()
