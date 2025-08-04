@@ -13,7 +13,7 @@ from .transforms import Crop, Resize, Rotate
 class OpenEarthMapRGBDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        data_dir: str = "./data/OpenEarthMap-RGB",
+        data_dir: str,
         batch_size: int = 32,
         img_size: int = 512,
         num_workers: int = 4,
@@ -22,7 +22,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
 
         self.save_hyperparameters()
 
-        self.data_dir = data_dir
+        self.data_dir = os.path.join(data_dir, "OpenEarthMap-RGB")
         self.batch_size = batch_size
         self.img_size = img_size
         self.num_workers = num_workers
