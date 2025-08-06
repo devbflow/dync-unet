@@ -10,6 +10,29 @@ trainer:
   fast_dev_run: False
   overfit_batches: 0.0
   enable_progress_bar: False
+  enable_checkpointing: True
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val_loss
+        save_last: True
+        save_top_k: 1
+        every_n_epochs: 100
+    - class_path: lightning.pytorch.callbacks.BatchSizeFinder
+      init_args:
+        mode: binsearch
+        steps_per_trial: 3
+        init_val: 8
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val_loss
+        patience: 3
+    - class_path: lightning.pytorch.callbacks.LearningRateFinder
+      init_args:
+        min_lr: 1e-08
+        max_lr: 1
+        num_training_steps: 100
+        mode: exponential
 
 model:
   conv_type: static
