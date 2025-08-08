@@ -1,9 +1,11 @@
 import lightning as pl
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 from .unet_model import UNet
+from src.utils.visualization import draw_segment_image
 
 
 class UNetLightningModule(pl.LightningModule):
@@ -20,7 +22,9 @@ class UNetLightningModule(pl.LightningModule):
         super().__init__()
 
         self.save_hyperparameters()
-        assert conv_type in ("static", "dynamic")
+        assert conv_type in ("static", "dynamic"), (
+            f"'{conv_type}' not supported. Should be 'static' or 'dynamic'."
+        )
 
         self.model = UNet(
             in_channels=in_channels,
@@ -44,6 +48,11 @@ class UNetLightningModule(pl.LightningModule):
         loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, logger=True)
+
+        if self.current_epoch % 10 == 0:
+            images = draw_segment_image(y_hat, "oem").squeeze()
+            self._log_images(images, self.current_epoch)
+
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -52,15 +61,37 @@ class UNetLightningModule(pl.LightningModule):
         loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, logger=True)
+
+        if self.current_epoch % 20 == 0:
+            images = draw_segment_image(y_hat, "oem").squeeze()
+            self._log_images(images, self.current_epoch)
+
         return loss
 
     def test_step(self, batch, batch_idx):
-        imgs, masks, _ = batch
-        y_hat = self.forward(imgs)
-        loss = self.loss_fn(y_hat, masks.to(torch.float32))
+        imgs, _, _ = batch
+        with torch.no_grad():
+            y_hat = self.forward(imgs)
+        y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
 
-        self.log("test_loss", loss, on_step=False, on_epoch=True, logger=True)
-        return loss
+        if batch_idx % 50 == 0:
+            images = draw_segment_image(y_hat, "oem").squeeze()
+            self._log_images(images, batch_idx)
+
+    def predict_step(self, batch, batch_idx):
+        imgs, _, _ = batch
+        with torch.no_grad():
+            y_hat = self.forward(imgs)
+        y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
+
+        images = draw_segment_image(y_hat, "oem").squeeze()
+        self._log_images(images, batch_idx)  # log single images in predict
+
+    def _log_images(self, images, step):
+        if len(images.shape) == 4:
+            self.logger.experiment.add_images("image", images, step, dataformats="NHWC")
+        else:
+            self.logger.experiment.add_image("image", images, step, dataformats="HWC")
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr)

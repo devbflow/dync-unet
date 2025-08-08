@@ -68,16 +68,24 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
                 f"[{self.__class__.__name__}] setup(validate) called. Val size: {len(self.val_dataset)}"
             )
 
-        if stage == "test":
+        if stage == "test" or stage == "predict":
             test_filenames = [
                 str(f)
                 for f in filenames
                 if f.name in np.loadtxt(self.test_split, dtype=str)
             ]
-            self.test_dataset = OpenEarthMapRGBDataset(test_filenames, testing=True)
+
+            if stage == "predict":
+                # when predicting, only do small batch of test files
+                test_filenames = np.random.default_rng().choice(test_filenames, 32)
+                test_augm = torchvision.transforms.Compose([Resize(self.img_size)])
+
+            self.test_dataset = OpenEarthMapRGBDataset(
+                test_filenames, augm=test_augm, testing=True
+            )
 
             print(
-                f"[{self.__class__.__name__}] setup(test) called. Test size: {len(self.test_dataset)}"
+                f"[{self.__class__.__name__}] setup(test/predict) called. Test size: {len(self.test_dataset)}"
             )
 
     def train_dataloader(self):
@@ -108,6 +116,17 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         if self.test_dataset is None:
             raise RuntimeError("test_dataset is not set. Call setup('test') first.")
         print(f"[{self.__class__.__name__}] test_dataloader called.")
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )
+
+    def predict_dataloader(self):
+        if self.test_dataset is None:
+            raise RuntimeError("test_dataset is not set. Call setup('predict') first.")
+        print(f"[{self.__class__.__name__}] predict_dataloader called.")
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
