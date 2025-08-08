@@ -35,6 +35,7 @@ def draw_segment_image(
     label_file: str | Path | torch.Tensor | np.ndarray,
     dataset_name: str,
     show: bool = False,
+    to_pil_image: bool = False,
 ):
     """Makes a segment image from label image with the dataset-specific color scheme and shows it optionally.
 
@@ -42,6 +43,7 @@ def draw_segment_image(
         label_file (str | Path | torch.Tensor | np.ndarray): label image to draw segment from
         dataset_name (str): dataset of input
         show (bool, optional): whether to show the segment image directly. Defaults to False.
+        to_pil_image (bool, optional): whether to convert to PIL image. Defaults to False.
 
     Returns:
         Image: RGB segment PIL-Image
@@ -49,7 +51,8 @@ def draw_segment_image(
     label_img = load_label_image(label_file)
     color_mapping = get_dataset_color_scheme(dataset_name)
     img_segment = color_mapping[label_img]
-    img_segment = Image.fromarray(img_segment)
+    if to_pil_image:
+        img_segment = Image.fromarray(img_segment)
     if show:
         img_segment.show()
 
