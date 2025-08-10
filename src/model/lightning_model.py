@@ -50,7 +50,7 @@ class UNetLightningModule(pl.LightningModule):
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, logger=True)
 
-        if self.current_epoch % self.log_img_every_n_epoch == 0:
+        if self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
             images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(images, self.current_epoch)
@@ -64,7 +64,7 @@ class UNetLightningModule(pl.LightningModule):
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, logger=True)
 
-        if self.current_epoch % self.log_img_every_n_epoch == 0:
+        if self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
             images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(images, self.current_epoch)
