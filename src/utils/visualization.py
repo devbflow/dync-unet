@@ -74,13 +74,15 @@ def get_dataset_color_scheme(dataset_name: str) -> np.ndarray:
 
 
 def load_label_image(
-    label_file_path: str | Path | np.ndarray,
+    labels: str | Path | np.ndarray | torch.Tensor,
 ) -> np.ndarray:
-    match label_file_path:
+    match labels:
         case np.ndarray():
-            return label_file_path
+            return labels
+        case torch.Tensor():
+            return labels.cpu().detach()
         case str() | Path():
-            label_img = Image.open(label_file_path)
+            label_img = Image.open(labels)
             return np.asarray(label_img)
         case _:
-            raise ValueError(f"'{type(label_file_path)}' not supported.")
+            raise ValueError(f"'{type(labels)}' not supported.")
