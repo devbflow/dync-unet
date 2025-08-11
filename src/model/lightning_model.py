@@ -53,7 +53,10 @@ class UNetLightningModule(pl.LightningModule):
         if self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
             images = draw_segment_image(y_hat, "oem").squeeze()
-            self._log_images(images, self.current_epoch)
+            self._log_images(
+                self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+                self.current_epoch,
+            )
 
         return loss
 
@@ -67,7 +70,10 @@ class UNetLightningModule(pl.LightningModule):
         if self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
             images = draw_segment_image(y_hat, "oem").squeeze()
-            self._log_images(images, self.current_epoch)
+            self._log_images(
+                self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+                self.current_epoch,
+            )
 
         return loss
 
@@ -79,7 +85,10 @@ class UNetLightningModule(pl.LightningModule):
 
         if batch_idx % 50 == 0:
             images = draw_segment_image(y_hat, "oem").squeeze()
-            self._log_images(images, batch_idx)
+            self._log_images(
+                self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+                batch_idx,
+            )
 
     def predict_step(self, batch, batch_idx):
         imgs, _, _ = batch
@@ -88,13 +97,24 @@ class UNetLightningModule(pl.LightningModule):
         y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
 
         images = draw_segment_image(y_hat, "oem").squeeze()
-        self._log_images(images, batch_idx)  # log single images in predict
+        self._log_images(
+            self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+            batch_idx,
+        )
 
     def _log_images(self, images, step):
         if len(images.shape) == 4:
             self.logger.experiment.add_images("image", images, step, dataformats="NHWC")
         else:
             self.logger.experiment.add_image("image", images, step, dataformats="HWC")
+
+    def _stack_tensor_with_ndarray(
+        self, ndarray: np.ndarray, tensor: torch.Tensor
+    ) -> np.ndarray:
+        """Stack image tensor with segment image ndarray for visualization."""
+        return np.stack(
+            (ndarray, tensor.detach().cpu().permute(0, 2, 3, 1).numpy()), axis=0
+        )
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr)
