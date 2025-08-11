@@ -112,7 +112,7 @@ class UNetLightningModule(pl.LightningModule):
         self, ndarray: np.ndarray, tensor: torch.Tensor
     ) -> np.ndarray:
         """Stack image tensor with segment image ndarray for visualization."""
-        return np.stack(
+        return np.concat(
             (ndarray, tensor.detach().cpu().permute(0, 2, 3, 1).numpy()), axis=0
         )
 
