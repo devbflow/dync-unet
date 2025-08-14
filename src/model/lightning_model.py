@@ -113,7 +113,14 @@ class UNetLightningModule(pl.LightningModule):
     ) -> np.ndarray:
         """Stack image tensor with segment image ndarray for visualization."""
         return np.concat(
-            (ndarray, tensor.detach().cpu().permute(0, 2, 3, 1).numpy()), axis=0
+            (
+                ndarray,
+                (tensor.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype(
+                    "uint8"
+                ),
+            ),
+            axis=0,
+            dtype=np.uint8,
         )
 
     def configure_optimizers(self):

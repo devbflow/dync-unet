@@ -80,7 +80,7 @@ def load_label_image(
         case np.ndarray():
             return labels
         case torch.Tensor():
-            return labels.cpu().detach()
+            return labels.detach().cpu().numpy()
         case str() | Path():
             label_img = Image.open(labels)
             return np.asarray(label_img)
