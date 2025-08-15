@@ -78,7 +78,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
             if stage == "predict":
                 # when predicting, only do small batch of test files
                 test_filenames = np.random.default_rng().choice(test_filenames, 32)
-                test_augm = torchvision.transforms.Compose([Resize(self.img_size)])
+            test_augm = torchvision.transforms.Compose([Resize(self.img_size)])
 
             self.test_dataset = OpenEarthMapRGBDataset(
                 test_filenames, augm=test_augm, testing=True
