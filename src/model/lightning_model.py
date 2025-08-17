@@ -32,7 +32,7 @@ class UNetLightningModule(pl.LightningModule):
             num_classes=num_classes,
             initial_planes=initial_planes,
             num_layers=num_layers,
-            bilinear=True,
+            upsample=True,
             conv_type=conv_type,
             K=K,
         )
@@ -108,16 +108,12 @@ class UNetLightningModule(pl.LightningModule):
         else:
             self.logger.experiment.add_image("image", images, step, dataformats="HWC")
 
-    def _stack_tensor_with_ndarray(
-        self, ndarray: np.ndarray, tensor: torch.Tensor
-    ) -> np.ndarray:
+    def _stack_tensor_with_ndarray(self, ndarray: np.ndarray, tensor: torch.Tensor) -> np.ndarray:
         """Stack image tensor with segment image ndarray for visualization."""
         return np.concat(
             (
                 ndarray,
-                (tensor.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype(
-                    "uint8"
-                ),
+                (tensor.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype("uint8"),
             ),
             axis=0,
             dtype=np.uint8,

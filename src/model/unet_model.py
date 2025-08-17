@@ -167,10 +167,10 @@ class UpBlock(nn.Module):
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
-        bilinear: bool = True,
+        upsample: bool = True,
     ):
         super().__init__()
-        if bilinear:
+        if upsample:
             self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
         else:
             self.up = nn.ConvTranspose2d(
@@ -205,7 +205,7 @@ class UNet(nn.Module):
         num_classes: int,
         initial_planes: int = 64,
         num_layers: int = 4,
-        bilinear: bool = True,
+        upsample: bool = True,
         conv_type: str = "static",
         K: int = None,
     ):
@@ -213,7 +213,7 @@ class UNet(nn.Module):
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.num_layers = num_layers
-        self.bilinear = bilinear
+        self.upsample = upsample
         self.conv, self.conv_kwargs = get_conv_and_kwargs(conv_type, K)
 
         self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)
@@ -239,7 +239,7 @@ class UNet(nn.Module):
                     initial_planes * 2**j + initial_planes * 2 ** (j - 1),
                     initial_planes * 2 ** (j - 1),
                     self.conv_kwargs,
-                    bilinear,
+                    upsample,
                 )
                 for j in range(self.num_layers, 0, -1)
             ]
