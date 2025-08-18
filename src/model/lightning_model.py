@@ -43,70 +43,74 @@ class UNetLightningModule(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        imgs, masks, _ = batch
-        y_hat = self.forward(imgs)
+        input_imgs, masks, _ = batch
+        y_hat = self.forward(input_imgs)
 
         loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, logger=True)
 
-        if self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
+        if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
-            images = draw_segment_image(y_hat, "oem").squeeze()
+            segment_images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(
-                self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+                "train",
+                self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
                 self.current_epoch,
             )
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        imgs, masks, _ = batch
-        y_hat = self.forward(imgs)
+        input_imgs, masks, _ = batch
+        y_hat = self.forward(input_imgs)
         loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, logger=True)
 
-        if self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
+        if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
-            images = draw_segment_image(y_hat, "oem").squeeze()
+            segment_images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(
-                self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+                "val",
+                self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
                 self.current_epoch,
             )
 
         return loss
 
     def test_step(self, batch, batch_idx):
-        imgs, _, _ = batch
+        input_imgs, _, _ = batch
         with torch.no_grad():
-            y_hat = self.forward(imgs)
+            y_hat = self.forward(input_imgs)
         y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
 
         if batch_idx % 50 == 0:
-            images = draw_segment_image(y_hat, "oem").squeeze()
+            segment_images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(
-                self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+                "test",
+                self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
                 batch_idx,
             )
 
     def predict_step(self, batch, batch_idx):
-        imgs, _, _ = batch
+        input_imgs, _, _ = batch
         with torch.no_grad():
-            y_hat = self.forward(imgs)
+            y_hat = self.forward(input_imgs)
         y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
 
-        images = draw_segment_image(y_hat, "oem").squeeze()
+        segment_images = draw_segment_image(y_hat, "oem").squeeze()
         self._log_images(
-            self._stack_tensor_with_ndarray(ndarray=images, tensor=imgs),
+            "predict",
+            self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
             batch_idx,
         )
 
-    def _log_images(self, images, step):
+    def _log_images(self, mode, images, step):
         if len(images.shape) == 4:
-            self.logger.experiment.add_images("image", images, step, dataformats="NHWC")
+            self.logger.experiment.add_images(f"{mode}_image", images, step, dataformats="NHWC")
         else:
-            self.logger.experiment.add_image("image", images, step, dataformats="HWC")
+            self.logger.experiment.add_image(f"{mode}_image", images, step, dataformats="HWC")
 
     def _stack_tensor_with_ndarray(self, ndarray: np.ndarray, tensor: torch.Tensor) -> np.ndarray:
         """Stack image tensor with segment image ndarray for visualization."""
