@@ -55,7 +55,7 @@ class UNetLightningModule(pl.LightningModule):
             segment_images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(
                 "train",
-                self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
+                self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
                 self.current_epoch,
             )
 
@@ -73,7 +73,7 @@ class UNetLightningModule(pl.LightningModule):
             segment_images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(
                 "val",
-                self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
+                self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
                 self.current_epoch,
             )
 
@@ -89,7 +89,7 @@ class UNetLightningModule(pl.LightningModule):
             segment_images = draw_segment_image(y_hat, "oem").squeeze()
             self._log_images(
                 "test",
-                self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
+                self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
                 batch_idx,
             )
 
@@ -102,7 +102,7 @@ class UNetLightningModule(pl.LightningModule):
         segment_images = draw_segment_image(y_hat, "oem").squeeze()
         self._log_images(
             "predict",
-            self._stack_tensor_with_ndarray(ndarray=segment_images, tensor=input_imgs),
+            self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
             batch_idx,
         )
 
@@ -112,12 +112,14 @@ class UNetLightningModule(pl.LightningModule):
         else:
             self.logger.experiment.add_image(f"{mode}_image", images, step, dataformats="HWC")
 
-    def _stack_tensor_with_ndarray(self, ndarray: np.ndarray, tensor: torch.Tensor) -> np.ndarray:
+    def _stack_segment_with_input(
+        self, segment: np.ndarray, input_images: torch.Tensor
+    ) -> np.ndarray:
         """Stack image tensor with segment image ndarray for visualization."""
         return np.concat(
             (
-                ndarray,
-                (tensor.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype("uint8"),
+                segment,
+                (input_images.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype("uint8"),
             ),
             axis=0,
             dtype=np.uint8,
