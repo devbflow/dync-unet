@@ -1,0 +1,8 @@
+conv_type: static
+in_channels: 3
+num_classes: 9
+num_layers: 4
+initial_planes: 64
+lr: 1e-3
+K: null
+log_img_every_n_epochs: 50
