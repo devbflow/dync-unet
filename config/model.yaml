@@ -5,4 +5,4 @@ num_layers: 4
 initial_planes: 64
 lr: 1e-3
 K: null
-log_img_every_n_epochs: 50
+log_img_every_n_epoch: 50
