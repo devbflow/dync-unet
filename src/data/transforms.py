@@ -1,12 +1,15 @@
 import numbers
 import random
 
+import albumentations as A
 import numpy as np
-import torchvision.transforms.functional as TF
-from torchvision.transforms import InterpolationMode
+import torchvision.transforms.v2.functional as TF
+from torchvision.transforms.v2 import InterpolationMode
 
 
 class ToTensor:
+    """OpenEarthMap-RGB custom to_tensor"""
+
     def __init__(self, classes):
         self.classes = classes
 
@@ -18,6 +21,8 @@ class ToTensor:
 
 
 class Rotate:
+    """OpenEarthMap-RGB custom rotate"""
+
     def __init__(self, degrees=(-180, 180)):
         self.degrees = degrees
 
@@ -30,6 +35,8 @@ class Rotate:
 
 
 class Crop:
+    """OpenEarthMap-RGB custom crop"""
+
     def __init__(self, size):
         if isinstance(size, numbers.Number):
             self.size = (int(size), int(size))
@@ -52,6 +59,8 @@ class Crop:
 
 
 class Resize:
+    """OpenEarthMap-RGB custom resize"""
+
     def __init__(self, size):
         if isinstance(size, numbers.Number):
             self.size = (int(size), int(size))
@@ -63,3 +72,18 @@ class Resize:
         msk = TF.resize(sample["mask"], self.size, InterpolationMode.NEAREST)
 
         return {"image": img, "mask": msk}
+
+
+def train_augm3(sample: dict, size: int = 512):
+    """OpenEarthMap-SAR train augmentations"""
+    augms = [
+        A.PadIfNeeded(size, size, border_mode=0, fill=0, p=1.0),
+        A.RandomCrop(size, size, p=1.0),
+    ]
+    return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
+
+
+def valid_augm(sample: dict, size: int = 512):
+    """OpenEarthMap-SAR validation augmentations"""
+    augms = [A.Resize(height=size, width=size, p=1.0)]
+    return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
