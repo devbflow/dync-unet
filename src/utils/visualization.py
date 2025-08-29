@@ -36,7 +36,7 @@ def draw_segment_image(
     dataset_name: str,
     show: bool = False,
     to_pil_image: bool = False,
-):
+) -> np.ndarray | Image.Image:
     """Makes a segment image from label image with the dataset-specific color scheme and shows it optionally.
 
     Args:
@@ -53,8 +53,8 @@ def draw_segment_image(
     img_segment = color_mapping[label_img]
     if to_pil_image:
         img_segment = Image.fromarray(img_segment)
-    if show:
-        img_segment.show()
+        if show:
+            img_segment.show()
 
     return img_segment
 
@@ -68,9 +68,7 @@ def get_dataset_color_scheme(dataset_name: str) -> np.ndarray:
         case "oem" | "openearthmap" | "open-earth-map":
             return OPENEARTHMAP_COLOR_MAPPING
         case _:
-            raise NotImplementedError(
-                f"'{dataset_name}' has no implemented color scheme."
-            )
+            raise NotImplementedError(f"'{dataset_name}' has no implemented color scheme.")
 
 
 def load_label_image(
