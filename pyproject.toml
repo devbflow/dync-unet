@@ -10,7 +10,7 @@ dependencies = [
     "pip>=25.1.1",
     "rasterio>=1.4.3",
     "tensorboard>=2.20.0",
-    "torch>=2.7.1",
-    "torchvision>=0.22.1",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
     "uv>=0.7.19",
 ]
