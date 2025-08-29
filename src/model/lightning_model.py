@@ -4,8 +4,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from .unet_model import UNet
+from src.utils.metrics import FBetaScore, IoU
 from src.utils.visualization import draw_segment_image
+
+from .unet_model import UNet
 
 
 class UNetLightningModule(pl.LightningModule):
@@ -38,6 +40,8 @@ class UNetLightningModule(pl.LightningModule):
         )
 
         self.loss_fn = nn.CrossEntropyLoss()
+        self.f_score = FBetaScore()
+        self.iou = IoU()
 
     def forward(self, x) -> torch.Tensor:
         return self.model(x)
@@ -47,8 +51,15 @@ class UNetLightningModule(pl.LightningModule):
         y_hat = self.forward(input_imgs)
 
         loss = self.loss_fn(y_hat, masks.to(torch.float32))
+        iou = self.iou(y_hat, masks.to(torch.float32))
+        fscore = self.f_score(y_hat, masks.to(torch.float32))
 
-        self.log("train_loss", loss, on_step=True, on_epoch=True, logger=True)
+        self.log_dict(
+            {"train_loss": loss, "train_mIoU": iou, "train_fscore": fscore},
+            on_step=True,
+            on_epoch=True,
+            logger=True,
+        )
 
         if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
@@ -64,9 +75,17 @@ class UNetLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
         y_hat = self.forward(input_imgs)
-        loss = self.loss_fn(y_hat, masks.to(torch.float32))
 
-        self.log("val_loss", loss, on_step=False, on_epoch=True, logger=True)
+        loss = self.loss_fn(y_hat, masks.to(torch.float32))
+        iou = self.iou(y_hat, masks.to(torch.float32))
+        fscore = self.f_score(y_hat, masks.to(torch.float32))
+
+        self.log_dict(
+            {"val_loss": loss, "val_mIoU": iou, "val_fscore": fscore},
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
 
         if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
             y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
