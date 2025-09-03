@@ -20,7 +20,7 @@ def load_grayscale(path: str):
 
 class OpenEarthMapRGBDataset(Dataset):
     """
-    OpenEarthMap dataset
+    OpenEarthMap RGB dataset
 
     Args:
         fn_list (str): List containing image names
@@ -68,3 +68,44 @@ class OpenEarthMapRGBDataset(Dataset):
 
     def __len__(self):
         return len(self.fn_imgs)
+
+
+class OpenEarthMapSARDataset(Dataset):
+    def __init__(self, label_list, data_type="rgb", classes=None, size=512, train=False):
+        self.fns = label_list
+        assert data_type.lower() in ("rgb", "sar"), (
+            f"'{data_type}' not supported, must be 'rgb' or 'sar'."
+        )
+        self.data_type = data_type.lower()
+        self.augm = transforms.train_augm3 if train else transforms.valid_augm
+        self.size = size
+        self.train = train
+        self.to_tensor = transforms.ToTensor(classes=classes)
+        self.load_multiband = load_multiband
+        self.load_grayscale = load_grayscale
+
+    def __getitem__(self, idx):
+        img = self.load_grayscale(self.fns[idx].replace("labels", f"{self.data_type}_images"))
+        msk = self.load_grayscale(self.fns[idx])
+
+        data = self.augm({"image": img, "mask": msk}, self.size)
+        data = self.to_tensor(data)
+
+        return data["image"], data["mask"], self.fns[idx]
+
+    def __len__(self):
+        return len(self.fns)
+
+
+if __name__ == "__main__":
+    import os
+
+    fname = "TrainArea_001.tif"
+    data_root = "/run/media/flow/CnMemory/Downloads/OpenEarthMap-SAR/train"
+    file_path = os.path.join(data_root, "labels", fname)
+    label_image = load_grayscale(file_path)
+    print(label_image)
+    rgb_image = load_multiband(file_path.replace("labels", "rgb_images"))
+    print(rgb_image)
+    sar_image = load_grayscale(file_path.replace("labels", "sar_images"))
+    print(sar_image)
