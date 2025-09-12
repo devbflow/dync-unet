@@ -3,7 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def get_conv_and_kwargs(conv_type: str = "static", K: int | None = None) -> tuple[nn.Module, dict]:
+def get_conv_and_kwargs(
+    conv_type: str = "static", K: int | None = None
+) -> tuple[nn.Module, dict]:
     """Helper function to get correct convolution type and respective necessary kwargs.
 
     Args:
@@ -20,8 +22,10 @@ def get_conv_and_kwargs(conv_type: str = "static", K: int | None = None) -> tupl
         return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1}
     elif conv_type == "dynamic":
         if K is None:
-            raise ValueError("For dynamic convolutions, number of kernels 'K' must be provided.")
-        return DynConv, {"K": K}
+            raise ValueError(
+                "For dynamic convolutions, number of kernels 'K' must be provided."
+            )
+        return DynConv, {"kernel_size": 3, "stride": 1, "padding": 1, "K": K}
     else:
         raise ValueError(
             f"Unsupported convolution type: '{conv_type}'. Supported types: 'static' or 'dynamic'."
@@ -41,7 +45,7 @@ class DynConv(nn.Module):
         kernel_size: int = 3,
         stride: int = 1,
         padding: int = 1,
-        bias: bool = False,
+        bias: bool = True,
         K: int = 4,
     ):
         super().__init__()
@@ -79,13 +83,16 @@ class DynConv(nn.Module):
 
         # Aggregate kernels and biases
         aggregated_weight = torch.sum(
-            attention_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) * self.weight,
+            attention_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            * self.weight,
             dim=1,
         )
 
         aggregated_bias = None
         if self.bias is not None:
-            aggregated_bias = torch.sum(attention_weights.unsqueeze(-1) * self.bias, dim=1)
+            aggregated_bias = torch.sum(
+                attention_weights.unsqueeze(-1) * self.bias, dim=1
+            )
 
         # Reshape for grouped convolution to apply batch-specific kernels
         x = x.view(1, N * C, H, W)
@@ -96,7 +103,9 @@ class DynConv(nn.Module):
         if aggregated_bias is not None:
             aggregated_bias = aggregated_bias.view(N * self.out_channels)
 
-        out = F.conv2d(x, aggregated_weight, aggregated_bias, self.stride, self.padding, groups=N)
+        out = F.conv2d(
+            x, aggregated_weight, aggregated_bias, self.stride, self.padding, groups=N
+        )
         out = out.view(N, self.out_channels, out.size(-2), out.size(-1))
 
         return out
