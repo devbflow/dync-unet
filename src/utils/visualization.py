@@ -68,7 +68,9 @@ def get_dataset_color_scheme(dataset_name: str) -> np.ndarray:
         case "oem" | "openearthmap" | "open-earth-map":
             return OPENEARTHMAP_COLOR_MAPPING
         case _:
-            raise NotImplementedError(f"'{dataset_name}' has no implemented color scheme.")
+            raise NotImplementedError(
+                f"'{dataset_name}' has no implemented color scheme."
+            )
 
 
 def load_label_image(
@@ -84,3 +86,13 @@ def load_label_image(
             return np.asarray(label_img)
         case _:
             raise ValueError(f"'{type(labels)}' not supported.")
+
+
+def map_classes_to_labels(dataset_name: str):
+    match dataset_name.lower():
+        case "oem" | "openearthmap" | "open-earth-map":
+            return [
+                class_tuple[0] for class_tuple in OPENEARTHMAP_CLASS_MAPPING.values()
+            ]
+        case _:
+            raise ValueError(f"'{dataset_name}' not supported.")

@@ -1,11 +1,15 @@
+import io
 import lightning as pl
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchmetrics.classification import MulticlassConfusionMatrix
+import torchvision
+from PIL import Image
 
 from src.utils.metrics import FBetaScore, IoU
-from src.utils.visualization import draw_segment_image
+from src.utils.visualization import draw_segment_image, map_classes_to_labels
 
 from .unet_model import UNet
 
@@ -42,17 +46,23 @@ class UNetLightningModule(pl.LightningModule):
         self.loss_fn = nn.CrossEntropyLoss()
         self.f_score = FBetaScore()
         self.iou = IoU()
+        self.train_conf_matrix = MulticlassConfusionMatrix(
+            num_classes, normalize="true"
+        )
+        self.val_conf_matrix = MulticlassConfusionMatrix(num_classes, normalize="true")
 
     def forward(self, x) -> torch.Tensor:
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
-        y_hat = self.forward(input_imgs)
+        pred = self.forward(input_imgs)
 
-        loss = self.loss_fn(y_hat, masks.to(torch.float32))
-        iou = self.iou(y_hat, masks.to(torch.float32))
-        fscore = self.f_score(y_hat, masks.to(torch.float32))
+        masks = masks.to(torch.float32)
+        loss = self.loss_fn(pred, masks)
+        iou = self.iou(pred, masks)
+        fscore = self.f_score(pred, masks)
+        self.train_conf_matrix(pred, masks)
 
         self.log_dict(
             {"train_loss": loss, "train_mIoU": iou, "train_fscore": fscore},
@@ -61,12 +71,22 @@ class UNetLightningModule(pl.LightningModule):
             logger=True,
         )
 
-        if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
-            y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
-            segment_images = draw_segment_image(y_hat, "oem").squeeze()
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.hparams.log_img_every_n_epoch == 0
+        ):
+            pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
+            segment_pred = draw_segment_image(pred, "oem").squeeze()
+            segment_target = draw_segment_image(
+                masks.detach().cpu().numpy(), "oem"
+            ).squeeze()
             self._log_images(
                 "train",
-                self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
+                self._stack_segment_with_input(
+                    segment_pred=segment_pred,
+                    input_images=input_imgs,
+                    segment_target=segment_target,
+                ),
                 self.current_epoch,
             )
 
@@ -74,11 +94,13 @@ class UNetLightningModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
-        y_hat = self.forward(input_imgs)
+        pred = self.forward(input_imgs)
 
-        loss = self.loss_fn(y_hat, masks.to(torch.float32))
-        iou = self.iou(y_hat, masks.to(torch.float32))
-        fscore = self.f_score(y_hat, masks.to(torch.float32))
+        masks = masks.to(torch.float32)
+        loss = self.loss_fn(pred, masks)
+        iou = self.iou(pred, masks)
+        fscore = self.f_score(pred, masks)
+        self.val_conf_matrix(pred, masks)
 
         self.log_dict(
             {"val_loss": loss, "val_mIoU": iou, "val_fscore": fscore},
@@ -87,62 +109,96 @@ class UNetLightningModule(pl.LightningModule):
             logger=True,
         )
 
-        if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
-            y_hat = np.argmax(y_hat.detach().cpu().numpy(), axis=1, keepdims=True)
-            segment_images = draw_segment_image(y_hat, "oem").squeeze()
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.hparams.log_img_every_n_epoch == 0
+        ):
+            pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
+            segment_pred = draw_segment_image(pred, "oem").squeeze()
+            segment_target = draw_segment_image(
+                masks.detach().cpu().numpy(), "oem"
+            ).squeeze()
             self._log_images(
                 "val",
-                self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
+                self._stack_segment_with_input(
+                    segment_pred=segment_pred,
+                    input_images=input_imgs,
+                    segment_target=segment_target,
+                ),
                 self.current_epoch,
             )
 
         return loss
 
+    def on_validation_end(self) -> None:
+        # plot confusion matrix to logger
+        fig, _ = self.val_conf_matrix.plot(labels=map_classes_to_labels("oem"))
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        im = torchvision.transforms.ToTensor()(Image.open(buf))
+        self.logger.experiment.add_image(
+            "val_conf_matrix", im, global_step=self.current_epoch
+        )
+
     def test_step(self, batch, batch_idx):
         input_imgs, _, _ = batch
         with torch.no_grad():
-            y_hat = self.forward(input_imgs)
-        y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
+            pred = self.forward(input_imgs)
+        pred = np.argmax(pred.cpu().numpy(), axis=1, keepdims=True)
 
         if batch_idx % 50 == 0:
-            segment_images = draw_segment_image(y_hat, "oem").squeeze()
+            segment_images = draw_segment_image(pred, "oem").squeeze()
             self._log_images(
                 "test",
-                self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
+                self._stack_segment_with_input(
+                    segment_pred=segment_images, input_images=input_imgs
+                ),
                 batch_idx,
             )
 
     def predict_step(self, batch, batch_idx):
         input_imgs, _, _ = batch
         with torch.no_grad():
-            y_hat = self.forward(input_imgs)
-        y_hat = np.argmax(y_hat.cpu().numpy(), axis=1, keepdims=True)
+            pred = self.forward(input_imgs)
+        pred = np.argmax(pred.cpu().numpy(), axis=1, keepdims=True)
 
-        segment_images = draw_segment_image(y_hat, "oem").squeeze()
+        segment_images = draw_segment_image(pred, "oem").squeeze()
         self._log_images(
             "predict",
-            self._stack_segment_with_input(segment=segment_images, input_images=input_imgs),
+            self._stack_segment_with_input(
+                segment_pred=segment_images, input_images=input_imgs
+            ),
             batch_idx,
         )
 
     def _log_images(self, mode, images, step):
         if len(images.shape) == 4:
-            self.logger.experiment.add_images(f"{mode}_image", images, step, dataformats="NHWC")
+            self.logger.experiment.add_images(
+                f"{mode}_image", images, step, dataformats="NHWC"
+            )
         else:
-            self.logger.experiment.add_image(f"{mode}_image", images, step, dataformats="HWC")
+            self.logger.experiment.add_image(
+                f"{mode}_image", images, step, dataformats="HWC"
+            )
 
     def _stack_segment_with_input(
-        self, segment: np.ndarray, input_images: torch.Tensor
+        self,
+        segment_pred: np.ndarray,
+        input_images: torch.Tensor,
+        segment_target: np.ndarray | None = None,
     ) -> np.ndarray:
         """Stack image tensor with segment image ndarray for visualization."""
-        return np.concat(
-            (
-                segment,
-                (input_images.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype("uint8"),
+        arrays = [
+            segment_pred,
+            (input_images.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype(
+                "uint8"
             ),
-            axis=0,
-            dtype=np.uint8,
-        )
+        ]
+        if segment_target is not None:
+            arrays.append(segment_target)
+
+        return np.concat(arrays, axis=0, dtype=np.uint8)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr)
