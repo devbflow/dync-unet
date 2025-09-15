@@ -5,6 +5,10 @@ import torch
 from PIL import Image
 
 OPENEARTHMAP_CLASS_MAPPING = {
+    0: (
+        "Background",
+        (0, 0, 0),
+    ),  # OEM classes start from 1 on, so we add this for indexing
     1: ("Bareland", (128, 0, 0)),
     2: ("Rangeland", (0, 255, 36)),
     3: ("Developed space", (148, 148, 148)),
