@@ -15,8 +15,8 @@ class ToTensor:
 
     def __call__(self, sample):
         msks = [(sample["mask"] == v) * 1 for v in self.classes]
-        sample["mask"] = TF.to_tensor(np.stack(msks, axis=-1))
-        sample["image"] = TF.to_tensor(sample["image"])
+        sample["mask"] = TF.to_dtype(TF.to_image(np.stack(msks, axis=-1)), scale=True)
+        sample["image"] = TF.to_dtype(TF.to_image(sample["image"]), scale=True)
         return sample
 
 
