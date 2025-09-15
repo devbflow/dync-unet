@@ -62,7 +62,7 @@ class UNetLightningModule(pl.LightningModule):
         loss = self.loss_fn(pred, masks)
         iou = self.iou(pred, masks)
         fscore = self.f_score(pred, masks)
-        self.train_conf_matrix(pred, masks)
+        self.train_conf_matrix(pred.argmax(dim=1), masks.argmax(dim=1))
 
         self.log_dict(
             {"train_loss": loss, "train_mIoU": iou, "train_fscore": fscore},
@@ -78,7 +78,7 @@ class UNetLightningModule(pl.LightningModule):
             pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
             segment_pred = draw_segment_image(pred, "oem").squeeze()
             segment_target = draw_segment_image(
-                masks.detach().cpu().numpy(), "oem"
+                np.argmax(masks.detach().cpu().numpy(), axis=1, keepdims=True), "oem"
             ).squeeze()
             self._log_images(
                 "train",
@@ -92,6 +92,17 @@ class UNetLightningModule(pl.LightningModule):
 
         return loss
 
+    def on_train_end(self) -> None:
+        # plot confusion matrix to logger
+        fig, _ = self.train_conf_matrix.plot(labels=map_classes_to_labels("oem"))
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        im = torchvision.transforms.ToTensor()(Image.open(buf))
+        self.logger.experiment.add_image(
+            "train_conf_matrix", im, global_step=self.current_epoch
+        )
+
     def validation_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
         pred = self.forward(input_imgs)
@@ -100,7 +111,7 @@ class UNetLightningModule(pl.LightningModule):
         loss = self.loss_fn(pred, masks)
         iou = self.iou(pred, masks)
         fscore = self.f_score(pred, masks)
-        self.val_conf_matrix(pred, masks)
+        self.val_conf_matrix(pred.argmax(dim=1), masks.argmax(dim=1))
 
         self.log_dict(
             {"val_loss": loss, "val_mIoU": iou, "val_fscore": fscore},
@@ -116,7 +127,7 @@ class UNetLightningModule(pl.LightningModule):
             pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
             segment_pred = draw_segment_image(pred, "oem").squeeze()
             segment_target = draw_segment_image(
-                masks.detach().cpu().numpy(), "oem"
+                np.argmax(masks.detach().cpu().numpy(), axis=1, keepdims=True), "oem"
             ).squeeze()
             self._log_images(
                 "val",
