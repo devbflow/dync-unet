@@ -1,12 +1,14 @@
 import io
+
 import lightning as pl
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchmetrics.classification import MulticlassConfusionMatrix
 import torchvision
+from matplotlib import pyplot as plt
 from PIL import Image
+from torchmetrics.classification import MulticlassConfusionMatrix
 
 from src.utils.metrics import FBetaScore, IoU
 from src.utils.visualization import draw_segment_image, map_classes_to_labels
@@ -93,15 +95,7 @@ class UNetLightningModule(pl.LightningModule):
         return loss
 
     def on_train_end(self) -> None:
-        # plot confusion matrix to logger
-        fig, _ = self.train_conf_matrix.plot(labels=map_classes_to_labels("oem"))
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight")
-        buf.seek(0)
-        im = torchvision.transforms.ToTensor()(Image.open(buf))
-        self.logger.experiment.add_image(
-            "train_conf_matrix", im, global_step=self.current_epoch
-        )
+        self._log_confusion_matrix(mode="train")
 
     def validation_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
@@ -142,15 +136,7 @@ class UNetLightningModule(pl.LightningModule):
         return loss
 
     def on_validation_end(self) -> None:
-        # plot confusion matrix to logger
-        fig, _ = self.val_conf_matrix.plot(labels=map_classes_to_labels("oem"))
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight")
-        buf.seek(0)
-        im = torchvision.transforms.ToTensor()(Image.open(buf))
-        self.logger.experiment.add_image(
-            "val_conf_matrix", im, global_step=self.current_epoch
-        )
+        self._log_confusion_matrix(mode="val")
 
     def test_step(self, batch, batch_idx):
         input_imgs, _, _ = batch
@@ -210,6 +196,31 @@ class UNetLightningModule(pl.LightningModule):
             arrays.append(segment_target)
 
         return np.concat(arrays, axis=0, dtype=np.uint8)
+
+    def _log_confusion_matrix(self, mode: str):
+        """Log (train or val) confusion matrix.
+
+        Args:
+            mode (str): train or val, depending on mode
+        """
+        conf_matrix = (
+            self.train_conf_matrix if mode == "train" else self.val_conf_matrix
+        )
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.set_title("(Normalized) Class Confusion Matrix")
+        fig, ax = conf_matrix.plot(ax=ax, labels=map_classes_to_labels("oem"))
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        im = torchvision.transforms.ToTensor()(Image.open(buf))
+
+        self.logger.experiment.add_image(
+            "train_conf_matrix" if mode == "train" else "val_conf_matrix",
+            im,
+            global_step=self.current_epoch,
+        )
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr)
