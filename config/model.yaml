@@ -5,4 +5,6 @@ num_layers: 4
 initial_planes: 64
 lr: 1e-3
 K: null
+downsample_size: null
+kernel_gen_hidden: null
 log_img_every_n_epoch: 50

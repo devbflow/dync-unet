@@ -31,9 +31,10 @@ class UNetLightningModule(pl.LightningModule):
         super().__init__()
 
         self.save_hyperparameters()
-        assert conv_type in ("static", "dynamic"), (
-            f"'{conv_type}' not supported. Should be 'static' or 'dynamic'."
+        assert conv_type in ("static", "attention-dynamic", "input-dynamic"), (
+            f"'{conv_type}' not supported. Should be 'static' or 'attention/input-dynamic'."
         )
+        torch.set_float32_matmul_precision("medium")
 
         self.model = UNet(
             in_channels=in_channels,
@@ -44,6 +45,7 @@ class UNetLightningModule(pl.LightningModule):
             conv_type=conv_type,
             K=K,
         )
+        self.model = torch.compile(self.model)
 
         self.loss_fn = nn.CrossEntropyLoss()
         self.f_score = FBetaScore()
@@ -64,7 +66,7 @@ class UNetLightningModule(pl.LightningModule):
         loss = self.loss_fn(pred, masks)
         iou = self.iou(pred, masks)
         fscore = self.f_score(pred, masks)
-        self.train_conf_matrix(pred.argmax(dim=1), masks.argmax(dim=1))
+        self.train_conf_matrix.update(pred.argmax(dim=1), masks.argmax(dim=1))
 
         self.log_dict(
             {"train_loss": loss, "train_mIoU": iou, "train_fscore": fscore},
@@ -105,7 +107,7 @@ class UNetLightningModule(pl.LightningModule):
         loss = self.loss_fn(pred, masks)
         iou = self.iou(pred, masks)
         fscore = self.f_score(pred, masks)
-        self.val_conf_matrix(pred.argmax(dim=1), masks.argmax(dim=1))
+        self.val_conf_matrix.update(pred.argmax(dim=1), masks.argmax(dim=1))
 
         self.log_dict(
             {"val_loss": loss, "val_mIoU": iou, "val_fscore": fscore},
