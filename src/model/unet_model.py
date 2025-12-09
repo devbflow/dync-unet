@@ -4,7 +4,10 @@ import torch.nn.functional as F
 
 
 def get_conv_and_kwargs(
-    conv_type: str = "static", K: int | None = None
+    conv_type: str = "static",
+    K: int | None = None,
+    downsample_size: int | None = None,
+    kernel_gen_hidden: int | None = None,
 ) -> tuple[nn.Module, dict]:
     """Helper function to get correct convolution type and respective necessary kwargs.
 
@@ -19,22 +22,31 @@ def get_conv_and_kwargs(
         tuple[nn.Module, dict]: convolution Module and specific kwargs
     """
     if conv_type == "static":
-        return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1}
-    elif conv_type == "dynamic":
+        return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1, "bias": False}
+    elif conv_type == "attention-dynamic":
         if K is None:
             raise ValueError(
-                "For dynamic convolutions, number of kernels 'K' must be provided."
+                "For attention dynamic convolutions, number of kernels 'K' must be provided."
             )
-        return DynConv, {"kernel_size": 3, "stride": 1, "padding": 1, "K": K}
+        return AttDynConv, {"kernel_size": 3, "stride": 1, "padding": 1, "K": K}
+    elif conv_type == "input-dynamic":
+        if downsample_size is None or kernel_gen_hidden is None:
+            raise ValueError(
+                "For input dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
+            )
+        return InputDynConv, {
+            "kernel_size": 3,
+            "downsample_size": downsample_size,
+            "kernel_gen_hidden": kernel_gen_hidden,
+        }
     else:
         raise ValueError(
-            f"Unsupported convolution type: '{conv_type}'. Supported types: 'static' or 'dynamic'."
+            f"Unsupported convolution type: '{conv_type}'. Supported types: 'static', 'attention-dynamic' or 'input-dynamic'."
         )
 
 
-class DynConv(nn.Module):
-    """
-    Dynamic Convolution layer as proposed in "Dynamic Convolution: Attention Over Convolution Kernels".
+class AttDynConv(nn.Module):
+    """Dynamic Convolution layer as proposed in "Dynamic Convolution: Attention Over Convolution Kernels".
     It aggregates multiple parallel convolution kernels dynamically based on input-dependent attention.
     """
 
@@ -45,7 +57,7 @@ class DynConv(nn.Module):
         kernel_size: int = 3,
         stride: int = 1,
         padding: int = 1,
-        bias: bool = True,
+        bias: bool = False,
         K: int = 4,
     ):
         super().__init__()
@@ -109,6 +121,71 @@ class DynConv(nn.Module):
         out = out.view(N, self.out_channels, out.size(-2), out.size(-1))
 
         return out
+
+
+class InputDynConv(nn.Module):
+    """A module for input-dependent dynamic kernel generation.
+    Utilizes an MLP to generate Conv kernel weights based on input."""
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        kernel_gen_hidden=256,
+        downsample_size=128,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.padding = kernel_size // 2  # "same"
+        self.downsample_size = min(downsample_size, 128)
+
+        self.num_kernel_params = out_channels * in_channels * kernel_size * kernel_size
+
+        self.channel_reduce = nn.Conv2d(in_channels, 1, 1)
+        self.kernel_generator = nn.Sequential(
+            nn.Linear(self.downsample_size * self.downsample_size, kernel_gen_hidden),
+            nn.ReLU(),
+            nn.Linear(kernel_gen_hidden, self.num_kernel_params),
+        )
+
+    def forward(self, x: torch.Tensor):
+        """Processes the input tensor x through the dynamic convolution using
+        group convolution.
+
+        Args:
+            x (torch.Tensor): input tensor of shape (B, C_in, H, W).
+        Returns:
+            torch.Tensor: output tensor of shape (B, C_out, H, W).
+        """
+        N, C, H, W = x.size()
+
+        downsampled = F.adaptive_avg_pool2d(x, self.downsample_size)
+        downsampled = self.channel_reduce(downsampled)
+
+        flattened_weights = self.kernel_generator(
+            downsampled.flatten(start_dim=-2, end_dim=-1)
+        )
+        dyn_conv_weights = flattened_weights.reshape(
+            N * self.out_channels, C, self.kernel_size, self.kernel_size
+        )
+
+        grouped_input = x.view(1, N * C, H, W)
+
+        output_grouped = F.conv2d(
+            input=grouped_input,
+            weight=dyn_conv_weights,
+            bias=None,
+            stride=1,
+            padding=self.padding,
+            groups=N,
+        )
+
+        output = output_grouped.view(N, self.out_channels, H, W)
+        return output
 
 
 class DoubleConv(nn.Module):
