@@ -285,13 +285,17 @@ class UNet(nn.Module):
         upsample: bool = True,
         conv_type: str = "static",
         K: int | None = None,
+        downsample_size: int | None = None,
+        kernel_gen_hidden: int | None = None,
     ):
         super().__init__()
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.num_layers = num_layers
         self.upsample = upsample
-        self.conv, self.conv_kwargs = get_conv_and_kwargs(conv_type, K)
+        self.conv, self.conv_kwargs = get_conv_and_kwargs(
+            conv_type, K, downsample_size, kernel_gen_hidden
+        )
 
         self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)
 

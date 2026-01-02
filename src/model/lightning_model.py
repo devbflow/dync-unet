@@ -26,6 +26,8 @@ class UNetLightningModule(pl.LightningModule):
         initial_planes: int = 64,
         lr: float = 1e-3,
         K: int | None = None,
+        downsample_size: int | None = None,
+        kernel_gen_hidden: int | None = None,
         log_img_every_n_epoch: int = 50,
     ):
         super().__init__()
@@ -44,6 +46,8 @@ class UNetLightningModule(pl.LightningModule):
             upsample=True,
             conv_type=conv_type,
             K=K,
+            downsample_size=downsample_size,
+            kernel_gen_hidden=kernel_gen_hidden,
         )
         self.model = torch.compile(self.model)
 
