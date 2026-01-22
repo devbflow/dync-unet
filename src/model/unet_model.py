@@ -2,25 +2,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .dynconv import AttDynConv, InputDynConv, WMDynConv
+
 
 def get_conv_and_kwargs(
     conv_type: str = "static",
     K: int | None = None,
     downsample_size: int | None = None,
     kernel_gen_hidden: int | None = None,
-) -> tuple[nn.Module, dict]:
-    """Helper function to get correct convolution type and respective necessary kwargs.
+    demodulate: bool = True,
+) -> tuple[type[nn.Module], dict]:
+    """Helper function to get correct convolution type and respective necessary kwargs."""
 
-    Args:
-        conv_type (str): (supported) type of convolution. 'static' or 'dynamic'. Defaults to 'static'.
-        K (int, optional): number of kernels for dynamic conv. Defaults to None.
-
-    Raises:
-        ValueError: if conv_type is unsupported or required arguments are missing
-
-    Returns:
-        tuple[nn.Module, dict]: convolution Module and specific kwargs
-    """
     if conv_type == "static":
         return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1, "bias": False}
     elif conv_type == "attention-dynamic":
@@ -39,153 +32,21 @@ def get_conv_and_kwargs(
             "downsample_size": downsample_size,
             "kernel_gen_hidden": kernel_gen_hidden,
         }
+    elif conv_type == "wm-dynamic":
+        if downsample_size is None or kernel_gen_hidden is None:
+            raise ValueError(
+                "For input dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
+            )
+        return WMDynConv, {
+            "kernel_size": 3,
+            "downsample_size": downsample_size,
+            "kernel_gen_hidden": kernel_gen_hidden,
+            "demodulate": demodulate,
+        }
     else:
         raise ValueError(
-            f"Unsupported convolution type: '{conv_type}'. Supported types: 'static', 'attention-dynamic' or 'input-dynamic'."
+            f"Unsupported convolution type: '{conv_type}'. Supported types: ['static', 'attention-dynamic', 'input-dynamic', 'wm-dynamic']."
         )
-
-
-class AttDynConv(nn.Module):
-    """Dynamic Convolution layer as proposed in "Dynamic Convolution: Attention Over Convolution Kernels".
-    It aggregates multiple parallel convolution kernels dynamically based on input-dependent attention.
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: int = 3,
-        stride: int = 1,
-        padding: int = 1,
-        bias: bool = False,
-        K: int = 4,
-    ):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.K = K
-
-        # K sets of convolution kernels and biases
-        self.weight = nn.Parameter(
-            torch.randn(K, out_channels, in_channels, kernel_size, kernel_size)
-        )
-        if bias:
-            self.bias = nn.Parameter(torch.randn(K, out_channels))
-        else:
-            self.register_parameter("bias", None)
-
-        # Attention mechanism (similar to Squeeze-and-Excitation)
-        self.attention_pooling = nn.AdaptiveAvgPool2d(1)
-        self.attention_fc1 = nn.Linear(in_channels, in_channels // 4)
-        self.attention_relu = nn.ReLU(inplace=True)
-        self.attention_fc2 = nn.Linear(in_channels // 4, K)
-
-    def forward(self, x: torch.Tensor):
-        N, C, H, W = x.size()
-
-        # Compute attention weights
-        attention_input = self.attention_pooling(x).view(N, C)
-        attention_weights = self.attention_fc2(
-            self.attention_relu(self.attention_fc1(attention_input))
-        )
-        attention_weights = F.softmax(attention_weights, dim=1)
-
-        # Aggregate kernels and biases
-        aggregated_weight = torch.sum(
-            attention_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-            * self.weight,
-            dim=1,
-        )
-
-        aggregated_bias = None
-        if self.bias is not None:
-            aggregated_bias = torch.sum(
-                attention_weights.unsqueeze(-1) * self.bias, dim=1
-            )
-
-        # Reshape for grouped convolution to apply batch-specific kernels
-        x = x.view(1, N * C, H, W)
-        aggregated_weight = aggregated_weight.view(
-            N * self.out_channels, self.in_channels, self.kernel_size, self.kernel_size
-        )
-
-        if aggregated_bias is not None:
-            aggregated_bias = aggregated_bias.view(N * self.out_channels)
-
-        out = F.conv2d(
-            x, aggregated_weight, aggregated_bias, self.stride, self.padding, groups=N
-        )
-        out = out.view(N, self.out_channels, out.size(-2), out.size(-1))
-
-        return out
-
-
-class InputDynConv(nn.Module):
-    """A module for input-dependent dynamic kernel generation.
-    Utilizes an MLP to generate Conv kernel weights based on input."""
-
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        kernel_gen_hidden=256,
-        downsample_size=128,
-        **kwargs,
-    ) -> None:
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.padding = kernel_size // 2  # "same"
-        self.downsample_size = min(downsample_size, 128)
-
-        self.num_kernel_params = out_channels * in_channels * kernel_size * kernel_size
-
-        self.channel_reduce = nn.Conv2d(in_channels, 1, 1)
-        self.kernel_generator = nn.Sequential(
-            nn.Linear(self.downsample_size * self.downsample_size, kernel_gen_hidden),
-            nn.ReLU(),
-            nn.Linear(kernel_gen_hidden, self.num_kernel_params),
-        )
-
-    def forward(self, x: torch.Tensor):
-        """Processes the input tensor x through the dynamic convolution using
-        group convolution.
-
-        Args:
-            x (torch.Tensor): input tensor of shape (B, C_in, H, W).
-        Returns:
-            torch.Tensor: output tensor of shape (B, C_out, H, W).
-        """
-        N, C, H, W = x.size()
-
-        downsampled = F.adaptive_avg_pool2d(x, self.downsample_size)
-        downsampled = self.channel_reduce(downsampled)
-
-        flattened_weights = self.kernel_generator(
-            downsampled.flatten(start_dim=-2, end_dim=-1)
-        )
-        dyn_conv_weights = flattened_weights.reshape(
-            N * self.out_channels, C, self.kernel_size, self.kernel_size
-        )
-
-        grouped_input = x.view(1, N * C, H, W)
-
-        output_grouped = F.conv2d(
-            input=grouped_input,
-            weight=dyn_conv_weights,
-            bias=None,
-            stride=1,
-            padding=self.padding,
-            groups=N,
-        )
-
-        output = output_grouped.view(N, self.out_channels, H, W)
-        return output
 
 
 class DoubleConv(nn.Module):
@@ -195,7 +56,7 @@ class DoubleConv(nn.Module):
 
     def __init__(
         self,
-        conv_type: nn.Module,
+        conv_type: type[nn.Module],
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
@@ -220,7 +81,7 @@ class DownBlock(nn.Module):
 
     def __init__(
         self,
-        conv_type: nn.Module,
+        conv_type: type[nn.Module],
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
@@ -240,7 +101,7 @@ class UpBlock(nn.Module):
 
     def __init__(
         self,
-        conv_type: nn.Module,
+        conv_type: type[nn.Module],
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
@@ -287,6 +148,7 @@ class UNet(nn.Module):
         K: int | None = None,
         downsample_size: int | None = None,
         kernel_gen_hidden: int | None = None,
+        demodulate: bool = True,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -294,7 +156,7 @@ class UNet(nn.Module):
         self.num_layers = num_layers
         self.upsample = upsample
         self.conv, self.conv_kwargs = get_conv_and_kwargs(
-            conv_type, K, downsample_size, kernel_gen_hidden
+            conv_type, K, downsample_size, kernel_gen_hidden, demodulate
         )
 
         self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)
