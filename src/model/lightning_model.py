@@ -34,8 +34,8 @@ class UNetLightningModule(pl.LightningModule):
         super().__init__()
 
         self.save_hyperparameters()
-        assert conv_type in ("static", "attention-dynamic", "input-dynamic", "wm-dynamic"), (
-            f"'{conv_type}' not supported. Should be 'static' or 'attention/input/wm-dynamic'."
+        assert conv_type in ("static", "att-dynamic", "wp-dynamic", "wm-dynamic"), (
+            f"'{conv_type}' not supported. Should be 'static' or 'att/wp/wm-dynamic'."
         )
         torch.set_float32_matmul_precision("medium")
 
@@ -51,7 +51,7 @@ class UNetLightningModule(pl.LightningModule):
             kernel_gen_hidden=kernel_gen_hidden,
             demodulate=demodulate,
         )
-        self.model = torch.compile(self.model)
+        # self.model = torch.compile(self.model)
 
         self.loss_fn = nn.CrossEntropyLoss()
         self.f_score = FBetaScore()
@@ -203,6 +203,7 @@ class UNetLightningModule(pl.LightningModule):
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight")
+        plt.close(fig)
         buf.seek(0)
         im = torchvision.transforms.ToTensor()(Image.open(buf))
 

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .dynconv import AttDynConv, InputDynConv, WMDynConv
+from .dynconv import AttDynConv, WPDynConv, WMDynConv
 
 
 def get_conv_and_kwargs(
@@ -16,18 +16,18 @@ def get_conv_and_kwargs(
 
     if conv_type == "static":
         return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1, "bias": False}
-    elif conv_type == "attention-dynamic":
+    elif conv_type == "att-dynamic":
         if K is None:
             raise ValueError(
                 "For attention dynamic convolutions, number of kernels 'K' must be provided."
             )
         return AttDynConv, {"kernel_size": 3, "stride": 1, "padding": 1, "K": K}
-    elif conv_type == "input-dynamic":
+    elif conv_type == "wp-dynamic":
         if downsample_size is None or kernel_gen_hidden is None:
             raise ValueError(
-                "For input dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
+                "For weight prediction dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
             )
-        return InputDynConv, {
+        return WPDynConv, {
             "kernel_size": 3,
             "downsample_size": downsample_size,
             "kernel_gen_hidden": kernel_gen_hidden,
@@ -35,7 +35,7 @@ def get_conv_and_kwargs(
     elif conv_type == "wm-dynamic":
         if downsample_size is None or kernel_gen_hidden is None:
             raise ValueError(
-                "For input dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
+                "For weight modulation dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
             )
         return WMDynConv, {
             "kernel_size": 3,

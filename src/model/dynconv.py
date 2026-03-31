@@ -77,9 +77,9 @@ class AttDynConv(nn.Module):
         return out
 
 
-class InputDynConv(nn.Module):
-    """A module for input-dependent dynamic kernel generation.
-    Utilizes an MLP to generate Conv kernel weights based on input."""
+class WPDynConv(nn.Module):
+    """A module for weight-prediction dynamic kernel generation.
+    Utilizes an MLP to generate/predict Conv kernel weights based on input."""
 
     def __init__(
         self,
@@ -141,7 +141,7 @@ class InputDynConv(nn.Module):
 
 
 class WMDynConv(nn.Module):
-    """A module for input-dependent, weight modulated dynamic kernel generation, similar to StyleGAN2.
+    """A module for weight-modulation dynamic kernel generation, similar to StyleGAN2.
     Utilizes an MLP to modulate kernel over channel dimension based on input."""
 
     def __init__(
@@ -162,7 +162,7 @@ class WMDynConv(nn.Module):
         self.padding = kernel_size // 2  # "same"
         self.downsample_size = min(downsample_size, 128)
 
-        self.input_modulation = True
+        self.input_modulation = False
         self.demodulate = demodulate
         self.eps = eps
 
