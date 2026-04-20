@@ -9,3 +9,4 @@ downsample_size: null
 kernel_gen_hidden: null
 demodulate: True
 log_img_every_n_epoch: 50
+debug: False

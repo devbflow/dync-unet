@@ -30,6 +30,7 @@ class UNetLightningModule(pl.LightningModule):
         kernel_gen_hidden: int | None = None,
         demodulate: bool = True,
         log_img_every_n_epoch: int = 50,
+        debug: bool = False,
     ):
         super().__init__()
 
@@ -37,7 +38,7 @@ class UNetLightningModule(pl.LightningModule):
         assert conv_type in ("static", "att-dynamic", "wp-dynamic", "wm-dynamic"), (
             f"'{conv_type}' not supported. Should be 'static' or 'att/wp/wm-dynamic'."
         )
-        torch.set_float32_matmul_precision("medium")
+        # torch.set_float32_matmul_precision("medium")
 
         self.model = UNet(
             in_channels=in_channels,
@@ -95,6 +96,16 @@ class UNetLightningModule(pl.LightningModule):
                 self.current_epoch,
             )
 
+        if self.hparams.debug and batch_idx % 25 == 0:
+            # log gradients of first 5 params when debugging
+            params_to_log = list(self.model.parameters())[:5]
+            grad_norms = [p.grad_norm().item() for p in params_to_log if p.grad is not None]
+            self.log_dict(
+                {"debug/param_grad_norm": torch.tensor(grad_norms)},
+                on_step=True,
+                on_epoch=False,
+                logger=True,
+            )
         return loss
 
     def on_train_end(self) -> None:
@@ -187,7 +198,7 @@ class UNetLightningModule(pl.LightningModule):
         if segment_target is not None:
             arrays.append(segment_target)
 
-        return np.concat(arrays, axis=0, dtype=np.uint8)
+        return np.concatenate(arrays, axis=0, dtype=np.uint8)
 
     def _log_confusion_matrix(self, mode: str):
         """Log (train or val) confusion matrix.
