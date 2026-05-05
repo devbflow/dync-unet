@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .dynconv import AttDynConv, WPDynConv, WMDynConv
+from .dynconv import AttDynConv, WMDynConv, WPDynConv
 
 
 def get_conv_and_kwargs(
@@ -134,7 +134,9 @@ class UNet(nn.Module):
     """UNet implementation supporting multiple types of convolutional layers.
     Supported are:
         - 'static' == standard convolution (torch.nn.Conv2d)
-        - 'dynamic' == dynamic convolution (DynConv)
+        - 'att-dynamic' == attention dynamic convolution (AttDynConv)
+        - 'wp-dynamic' == weight prediction dynamic convolution (WPDynConv)
+        - 'wm-dynamic' == weight modulation dynamic convolution (WMDynConv)
     """
 
     def __init__(
