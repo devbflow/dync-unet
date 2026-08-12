@@ -52,12 +52,13 @@ class UNetLightningModule(pl.LightningModule):
             kernel_gen_hidden=kernel_gen_hidden,
             demodulate=demodulate,
         )
-        # self.model = torch.compile(self.model)
 
         self.loss_fn = nn.CrossEntropyLoss()
         self.f_score = FBetaScore()
         self.iou = IoU()
-        self.train_conf_matrix = MulticlassConfusionMatrix(num_classes, normalize="true")
+        self.train_conf_matrix = MulticlassConfusionMatrix(
+            num_classes, normalize="true"
+        )
         self.val_conf_matrix = MulticlassConfusionMatrix(num_classes, normalize="true")
 
     def forward(self, x) -> torch.Tensor:
@@ -69,9 +70,11 @@ class UNetLightningModule(pl.LightningModule):
 
         masks = masks.to(torch.float32)
         loss = self.loss_fn(pred, masks)
-        iou = self.iou(pred, masks)
-        fscore = self.f_score(pred, masks)
-        self.train_conf_matrix.update(pred.argmax(dim=1), masks.argmax(dim=1))
+
+        with torch.no_grad():
+            iou = self.iou(pred, masks)
+            fscore = self.f_score(pred, masks)
+            self.train_conf_matrix.update(pred.argmax(dim=1), masks.argmax(dim=1))
 
         self.log_dict(
             {"train_loss": loss, "train_mIoU": iou, "train_fscore": fscore},
@@ -80,7 +83,10 @@ class UNetLightningModule(pl.LightningModule):
             logger=True,
         )
 
-        if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.hparams.log_img_every_n_epoch == 0
+        ):
             pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
             segment_pred = draw_segment_image(pred, "oem").squeeze()
             segment_target = draw_segment_image(
@@ -94,17 +100,6 @@ class UNetLightningModule(pl.LightningModule):
                     segment_target=segment_target,
                 ),
                 self.current_epoch,
-            )
-
-        if self.hparams.debug and batch_idx % 25 == 0:
-            # log gradients of first 5 params when debugging
-            params_to_log = list(self.model.parameters())[:5]
-            grad_norms = [p.grad_norm().item() for p in params_to_log if p.grad is not None]
-            self.log_dict(
-                {"debug/param_grad_norm": torch.tensor(grad_norms)},
-                on_step=True,
-                on_epoch=False,
-                logger=True,
             )
         return loss
 
@@ -128,7 +123,10 @@ class UNetLightningModule(pl.LightningModule):
             logger=True,
         )
 
-        if batch_idx == 0 and self.current_epoch % self.hparams.log_img_every_n_epoch == 0:
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.hparams.log_img_every_n_epoch == 0
+        ):
             pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
             segment_pred = draw_segment_image(pred, "oem").squeeze()
             segment_target = draw_segment_image(
@@ -174,15 +172,21 @@ class UNetLightningModule(pl.LightningModule):
         segment_images = draw_segment_image(pred, "oem").squeeze()
         self._log_images(
             "predict",
-            self._stack_segment_with_input(segment_pred=segment_images, input_images=input_imgs),
+            self._stack_segment_with_input(
+                segment_pred=segment_images, input_images=input_imgs
+            ),
             batch_idx,
         )
 
     def _log_images(self, mode, images, step):
         if len(images.shape) == 4:
-            self.logger.experiment.add_images(f"{mode}_image", images, step, dataformats="NHWC")
+            self.logger.experiment.add_images(
+                f"{mode}_image", images, step, dataformats="NHWC"
+            )
         else:
-            self.logger.experiment.add_image(f"{mode}_image", images, step, dataformats="HWC")
+            self.logger.experiment.add_image(
+                f"{mode}_image", images, step, dataformats="HWC"
+            )
 
     def _stack_segment_with_input(
         self,
@@ -193,8 +197,14 @@ class UNetLightningModule(pl.LightningModule):
         """Stack image tensor with segment image ndarray for visualization."""
         arrays = [
             segment_pred,
-            (input_images.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype("uint8"),
+            (input_images.detach().cpu().permute(0, 2, 3, 1).numpy() * 255).astype(
+                "uint8"
+            ),
         ]
+        # grayscale images need to be converted to rgb
+        if arrays[1].shape[-1] == 1:
+            arrays[1] = arrays[1].repeat(3, axis=-1)
+
         if segment_target is not None:
             arrays.append(segment_target)
 
@@ -206,7 +216,9 @@ class UNetLightningModule(pl.LightningModule):
         Args:
             mode (str): train or val, depending on mode
         """
-        conf_matrix = self.train_conf_matrix if mode == "train" else self.val_conf_matrix
+        conf_matrix = (
+            self.train_conf_matrix if mode == "train" else self.val_conf_matrix
+        )
 
         fig, ax = plt.subplots(figsize=(12, 8))
         ax.set_title("(Normalized) Class Confusion Matrix")
