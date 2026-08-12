@@ -37,20 +37,14 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         self.test_dataset = None
 
     def setup(self, stage: str):
-        filenames = [
-            f for f in Path(self.data_dir).rglob("*.tif") if "/images/" in str(f)
-        ]
+        filenames = [f for f in Path(self.data_dir).rglob("*.tif") if "/images/" in str(f)]
 
         if stage == "fit":
             train_filenames = [
-                str(f)
-                for f in filenames
-                if f.name in np.loadtxt(self.train_split, dtype=str)
+                str(f) for f in filenames if f.name in np.loadtxt(self.train_split, dtype=str)
             ]
             train_augm = torchvision.transforms.Compose([Rotate(), Crop(self.img_size)])
-            self.train_dataset = OpenEarthMapRGBDataset(
-                train_filenames, augm=train_augm
-            )
+            self.train_dataset = OpenEarthMapRGBDataset(train_filenames, augm=train_augm)
 
             print(
                 f"[{self.__class__.__name__}] setup(fit) called. Train size: {len(self.train_dataset)}"
@@ -58,9 +52,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
 
         if stage == "validate" or stage == "fit":
             val_filenames = [
-                str(f)
-                for f in filenames
-                if f.name in np.loadtxt(self.val_split, dtype=str)
+                str(f) for f in filenames if f.name in np.loadtxt(self.val_split, dtype=str)
             ]
             val_augm = torchvision.transforms.Compose([Resize(self.img_size)])
             self.val_dataset = OpenEarthMapRGBDataset(val_filenames, augm=val_augm)
@@ -71,9 +63,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
 
         if stage == "test" or stage == "predict":
             test_filenames = [
-                str(f)
-                for f in filenames
-                if f.name in np.loadtxt(self.test_split, dtype=str)
+                str(f) for f in filenames if f.name in np.loadtxt(self.test_split, dtype=str)
             ]
 
             if stage == "predict":
@@ -81,9 +71,7 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
                 test_filenames = np.random.default_rng().choice(test_filenames, 32)
             test_augm = torchvision.transforms.Compose([Resize(self.img_size)])
 
-            self.test_dataset = OpenEarthMapRGBDataset(
-                test_filenames, augm=test_augm, testing=True
-            )
+            self.test_dataset = OpenEarthMapRGBDataset(test_filenames, augm=test_augm, testing=True)
 
             print(
                 f"[{self.__class__.__name__}] setup(test/predict) called. Test size: {len(self.test_dataset)}"
@@ -158,18 +146,19 @@ class OpenEarthMapSARDataModule(pl.LightningDataModule):
 
         self.train_split = os.path.join(self.data_dir, "train.txt")
         self.val_split = os.path.join(self.data_dir, "val.txt")
+        self.labels_path = os.path.join(self.data_dir, "train", "labels")
 
     def setup(self, stage: str):
-        filenames = os.listdir(os.path.join(self.data_dir, "train", "labels"))
+        filenames = os.listdir(self.labels_path)
 
         if stage == "fit":
-            train_filenames = [
-                os.path.join(self.data_dir, "train", f"{self.data_type}_images", name)
+            train_labels = [
+                os.path.join(self.labels_path, name)
                 for name in filenames
                 if name in np.loadtxt(self.train_split, dtype=str)
             ]
             self.train_dataset = OpenEarthMapSARDataset(
-                label_list=train_filenames,
+                label_list=train_labels,
                 data_type=self.data_type,
                 classes=8,
                 size=self.img_size,
@@ -181,13 +170,13 @@ class OpenEarthMapSARDataModule(pl.LightningDataModule):
             )
 
         if stage == "validate" or stage == "fit":
-            val_filenames = [
-                os.path.join(self.data_dir, "train", f"{self.data_type}_images", name)
+            val_labels = [
+                os.path.join(self.labels_path, name)
                 for name in filenames
                 if name in np.loadtxt(self.val_split, dtype=str)
             ]
             self.val_dataset = OpenEarthMapSARDataset(
-                label_list=val_filenames,
+                label_list=val_labels,
                 data_type=self.data_type,
                 classes=8,
                 size=self.img_size,
