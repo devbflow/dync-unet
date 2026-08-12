@@ -15,7 +15,7 @@ class ToTensor:
 
     def __call__(self, sample):
         msks = [(sample["mask"] == v) * 1 for v in self.classes]
-        sample["mask"] = TF.to_dtype(TF.to_image(np.stack(msks, axis=-1)), scale=True)
+        sample["mask"] = TF.to_dtype(TF.to_image(np.stack(msks, axis=-1)), scale=False)
         sample["image"] = TF.to_dtype(TF.to_image(sample["image"]), scale=True)
         return sample
 
@@ -72,6 +72,23 @@ class Resize:
         msk = TF.resize(sample["mask"], self.size, InterpolationMode.NEAREST)
 
         return {"image": img, "mask": msk}
+
+
+class ToTensorOEMSAR:
+    def __init__(self, classes):
+        self.classes = classes
+
+    def __call__(self, sample):
+        msks = [(sample["mask"] == v) * 1 for v in self.classes]
+        msk = np.stack(msks, axis=-1)
+        background = 1 - msk.sum(axis=-1, keepdims=True)
+        sample["mask"] = TF.to_dtype(
+            TF.to_image(np.concatenate((background, msk), axis=-1)), scale=False
+        )
+
+        for key in [k for k in sample if k != "mask"]:
+            sample[key] = TF.to_dtype(TF.to_image(sample[key]), scale=True)
+        return sample
 
 
 def train_augm3(sample: dict, size: int = 512):

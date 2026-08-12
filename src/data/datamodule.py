@@ -17,12 +17,13 @@ class OpenEarthMapRGBDataModule(pl.LightningDataModule):
         batch_size: int = 32,
         img_size: int = 512,
         num_workers: int = 4,
+        **kwargs,
     ):
         super().__init__()
 
         self.save_hyperparameters()
 
-        self.data_dir = os.path.join(data_dir, "OpenEarthMap-RGB")
+        self.data_dir = data_dir
         self.batch_size = batch_size
         self.img_size = img_size
         self.num_workers = num_workers
@@ -143,12 +144,13 @@ class OpenEarthMapSARDataModule(pl.LightningDataModule):
         img_size: int = 512,
         num_workers: int = 4,
         data_type: str = "sar",
+        **kwargs,
     ):
         super().__init__()
 
         self.save_hyperparameters()
 
-        self.data_dir = os.path.join(data_dir, "OpenEarthMap-SAR")
+        self.data_dir = data_dir
         self.batch_size = batch_size
         self.img_size = img_size
         self.num_workers = num_workers
@@ -169,7 +171,7 @@ class OpenEarthMapSARDataModule(pl.LightningDataModule):
             self.train_dataset = OpenEarthMapSARDataset(
                 label_list=train_filenames,
                 data_type=self.data_type,
-                classes=None,
+                classes=8,
                 size=self.img_size,
                 train=True,
             )
@@ -187,7 +189,7 @@ class OpenEarthMapSARDataModule(pl.LightningDataModule):
             self.val_dataset = OpenEarthMapSARDataset(
                 label_list=val_filenames,
                 data_type=self.data_type,
-                classes=None,
+                classes=8,
                 size=self.img_size,
                 train=False,
             )
