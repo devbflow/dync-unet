@@ -79,7 +79,7 @@ class ToTensorOEMSAR:
         self.classes = classes
 
     def __call__(self, sample):
-        msks = [(sample["mask"] == v) * 1 for v in self.classes]
+        msks = [(sample["mask"] == v) for v in self.classes]
         msk = np.stack(msks, axis=-1)
         background = 1 - msk.sum(axis=-1, keepdims=True)
         sample["mask"] = TF.to_dtype(

@@ -71,7 +71,7 @@ class OpenEarthMapRGBDataset(Dataset):
 
 
 class OpenEarthMapSARDataset(Dataset):
-    def __init__(self, label_list, data_type="rgb", classes=8, size=512, train=False):
+    def __init__(self, label_list, data_type="rgb", size=512, train=False):
         self.fns = label_list
         assert data_type.lower() in ("rgb", "sar"), (
             f"'{data_type}' not supported, must be 'rgb' or 'sar'."
@@ -80,7 +80,7 @@ class OpenEarthMapSARDataset(Dataset):
         self.augm = transforms.train_augm3 if train else transforms.valid_augm
         self.size = size
         self.train = train
-        self.classes = np.arange(classes).tolist()
+        self.classes = list(range(1, 9))
         self.to_tensor = transforms.ToTensorOEMSAR(classes=self.classes)
         self.load_fn = load_multiband if self.data_type == "rgb" else load_grayscale
         self.load_multiband = load_multiband
