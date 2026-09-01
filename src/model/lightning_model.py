@@ -3,15 +3,18 @@ import io
 import lightning as pl
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import torchvision
 from matplotlib import pyplot as plt
 from PIL import Image
+from torch import nn, optim
 from torchmetrics.classification import MulticlassConfusionMatrix
 
 from src.utils.metrics import FBetaScore, IoU
-from src.utils.visualization import draw_segment_image, map_classes_to_labels
+from src.utils.visualization import (
+    draw_segment_image,
+    get_num_classes,
+    map_classes_to_labels,
+)
 
 from .unet_model import UNet
 
@@ -21,7 +24,7 @@ class UNetLightningModule(pl.LightningModule):
         self,
         conv_type: str,
         in_channels: int,
-        num_classes: int,
+        dataset: str,
         num_layers: int = 4,
         initial_planes: int = 64,
         lr: float = 1e-3,
@@ -40,6 +43,7 @@ class UNetLightningModule(pl.LightningModule):
         )
         # torch.set_float32_matmul_precision("medium")
 
+        num_classes = get_num_classes(dataset)
         self.model = UNet(
             in_channels=in_channels,
             num_classes=num_classes,
@@ -70,7 +74,13 @@ class UNetLightningModule(pl.LightningModule):
 
         masks = masks.to(torch.float32)
         loss = self.loss_fn(pred, masks)
-
+        # print(f"LOSS: {loss}")
+        # print(f"MASKS Shape/Min/Max: {masks.shape} / {masks.min()} / {masks.max()}")
+        # for c in range(masks.shape[1]):
+        #     print(f"CLASS {c}:")
+        #     print("MIN:", masks[0, c, :, :].min(), "MAX:", masks[0, c, :, :].max())
+        # print(f"INPUT Shape/Min/Max: {input_imgs.shape} / {input_imgs.min()} /{input_imgs.max()}")
+        # print(f"PRED Shape/Min/Max: {pred.shape} / {pred.min()} / {pred.max()}")
         with torch.no_grad():
             iou = self.iou(pred, masks)
             fscore = self.f_score(pred, masks)
@@ -88,7 +98,7 @@ class UNetLightningModule(pl.LightningModule):
             and self.current_epoch % self.hparams.log_img_every_n_epoch == 0
         ):
             pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
-            segment_pred = draw_segment_image(pred, "oem").squeeze()
+            segment_pred = draw_segment_image(pred, self.hparams.dataset).squeeze()
             segment_target = draw_segment_image(
                 np.argmax(masks.detach().cpu().numpy(), axis=1, keepdims=True), "oem"
             ).squeeze()
@@ -128,9 +138,10 @@ class UNetLightningModule(pl.LightningModule):
             and self.current_epoch % self.hparams.log_img_every_n_epoch == 0
         ):
             pred = np.argmax(pred.detach().cpu().numpy(), axis=1, keepdims=True)
-            segment_pred = draw_segment_image(pred, "oem").squeeze()
+            segment_pred = draw_segment_image(pred, self.hparams.dataset).squeeze()
             segment_target = draw_segment_image(
-                np.argmax(masks.detach().cpu().numpy(), axis=1, keepdims=True), "oem"
+                np.argmax(masks.detach().cpu().numpy(), axis=1, keepdims=True),
+                self.hparams.dataset,
             ).squeeze()
             self._log_images(
                 "val",
@@ -154,7 +165,7 @@ class UNetLightningModule(pl.LightningModule):
         pred = np.argmax(pred.cpu().numpy(), axis=1, keepdims=True)
 
         if batch_idx % 50 == 0:
-            segment_images = draw_segment_image(pred, "oem").squeeze()
+            segment_images = draw_segment_image(pred, self.hparams.dataset).squeeze()
             self._log_images(
                 "test",
                 self._stack_segment_with_input(
@@ -169,7 +180,7 @@ class UNetLightningModule(pl.LightningModule):
             pred = self.forward(input_imgs)
         pred = np.argmax(pred.cpu().numpy(), axis=1, keepdims=True)
 
-        segment_images = draw_segment_image(pred, "oem").squeeze()
+        segment_images = draw_segment_image(pred, self.hparams.dataset).squeeze()
         self._log_images(
             "predict",
             self._stack_segment_with_input(
@@ -222,7 +233,9 @@ class UNetLightningModule(pl.LightningModule):
 
         fig, ax = plt.subplots(figsize=(12, 8))
         ax.set_title("(Normalized) Class Confusion Matrix")
-        fig, ax = conf_matrix.plot(ax=ax, labels=map_classes_to_labels("oem"))
+        fig, ax = conf_matrix.plot(
+            ax=ax, labels=map_classes_to_labels(self.hparams.dataset)
+        )
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight")
