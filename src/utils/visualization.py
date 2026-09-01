@@ -34,6 +34,41 @@ OPENEARTHMAP_COLOR_MAPPING = np.array(
     dtype=np.uint8,
 )
 
+WHUOPTSAR_CLASS_MAPPING = {
+    0: ("Background", (0, 0, 0)),
+    10: ("Farmland", (204, 102, 1)),
+    20: ("City", (254, 0, 0)),
+    30: ("Village", (255, 255, 1)),
+    40: ("Water", (0, 0, 254)),
+    50: ("Forest", (85, 166, 1)),
+    60: ("Road", (93, 255, 255)),
+    70: ("Others", (152, 102, 153)),
+}
+
+WHUOPTSAR_COLOR_MAPPING = np.array(
+    [
+        [0, 0, 0],
+        [204, 102, 1],
+        [254, 0, 0],
+        [255, 255, 1],
+        [0, 0, 254],
+        [85, 166, 1],
+        [93, 255, 255],
+        [152, 102, 153],
+    ],
+    dtype=np.uint8,
+)
+
+
+def get_num_classes(dataset_name: str) -> int:
+    if dataset_name == "whu":
+        mapping = WHUOPTSAR_CLASS_MAPPING
+    elif dataset_name == "oem":
+        mapping = OPENEARTHMAP_CLASS_MAPPING
+    else:
+        raise ValueError(f"Dataset '{dataset_name}' unsupported.")
+    return len(mapping)
+
 
 def draw_segment_image(
     label_file: str | Path | torch.Tensor | np.ndarray,
@@ -71,6 +106,8 @@ def get_dataset_color_scheme(dataset_name: str) -> np.ndarray:
     match dataset_name.lower():
         case "oem" | "openearthmap" | "open-earth-map":
             return OPENEARTHMAP_COLOR_MAPPING
+        case "whu" | "whuoptsar" | "whu-opt-sar":
+            return WHUOPTSAR_COLOR_MAPPING
         case _:
             raise NotImplementedError(
                 f"'{dataset_name}' has no implemented color scheme."
@@ -98,5 +135,7 @@ def map_classes_to_labels(dataset_name: str):
             return [
                 class_tuple[0] for class_tuple in OPENEARTHMAP_CLASS_MAPPING.values()
             ]
+        case "whu" | "whuoptsar" | "whu-opt-sar":
+            return [class_tuple[0] for class_tuple in WHUOPTSAR_CLASS_MAPPING.values()]
         case _:
             raise ValueError(f"'{dataset_name}' not supported.")

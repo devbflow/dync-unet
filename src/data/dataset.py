@@ -83,7 +83,6 @@ class OpenEarthMapSARDataset(Dataset):
         self.classes = list(range(1, 9))
         self.to_tensor = transforms.ToTensorOEMSAR(classes=self.classes)
         self.load_fn = load_multiband if self.data_type == "rgb" else load_grayscale
-        self.load_multiband = load_multiband
         self.load_grayscale = load_grayscale
 
     def __getitem__(self, idx):
@@ -93,6 +92,67 @@ class OpenEarthMapSARDataset(Dataset):
         data = self.augm({"image": img, "mask": msk}, self.size)
         data = self.to_tensor(data)
 
+        return data["image"], data["mask"], self.fns[idx]
+
+    def __len__(self):
+        return len(self.fns)
+
+
+class WHUOptSARDataset(Dataset):
+    """WHU-Opt-SAR dataset for RGB/optical and SAR image fusion.
+
+    Args:
+        data_dir: Base directory containing 'optical/', 'sar/', and 'lbl/' subfolders.
+        data_type: Either "rgb" to use only 3 RGB channels from RGBA images, or
+                   "rgb+nir" to use all 4 channels (RGB+NIR) or "sar" for 1 channel images. Default is "rgb".
+        crop_size: Target patch size for training/validation patches (default 512).
+
+    Notes:
+        - Optical images are in RGBA format (R, G, B, NIR). When data_type="rgb",
+          only the first 3 channels are used. When "rgb+nir", all 4 channels are used.
+        - SAR images are single-band (grayscale).
+    """
+
+    def __init__(
+        self,
+        label_list,
+        data_type: str = "rgb",
+        crop_size: int = 512,
+        train: bool = False,
+    ):
+        self.fns = label_list
+        self.data_type = data_type.lower()
+        self.data_type_dir = (
+            "optical" if self.data_type in ("rgb", "rgb+nir") else "sar"
+        )
+
+        assert data_type in ("rgb", "rgb+nir", "sar"), (
+            f"data_type must be 'rgb', 'sar' or 'rgb+nir', got '{data_type}'."
+        )
+        self.crop_size = crop_size
+        self.load_fn = (
+            load_multiband if self.data_type in ("rgb", "rgb+nir") else load_grayscale
+        )
+        self.load_grayscale = load_grayscale
+        self.augm = transforms.whu_train_augm if train else transforms.whu_valid_augm
+        self.to_tensor = transforms.ToTensor(classes=[0, 10, 20, 30, 40, 50, 60, 70])
+
+    def __getitem__(self, idx):
+        with rasterio.Env(CPL_LOG="/dev/null"):
+            img = self.load_fn(self.fns[idx].replace("lbl", self.data_type_dir))
+        msk = Image.fromarray(self.load_grayscale(self.fns[idx]))
+        if self.data_type == "rgb":
+            img = img[:, :, :3]  # Use only RGB channels, drop NIR channel
+
+        img = Image.fromarray(img)
+
+        data = self.augm({"image": img, "mask": msk}, target_size=self.crop_size)
+        data = self.to_tensor(
+            {
+                "image": np.array(data["image"], dtype="uint8"),
+                "mask": np.array(data["mask"], dtype="uint8"),
+            }
+        )
         return data["image"], data["mask"], self.fns[idx]
 
     def __len__(self):

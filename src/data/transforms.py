@@ -104,3 +104,82 @@ def valid_augm(sample: dict, size: int = 512):
     """OpenEarthMap-SAR validation augmentations"""
     augms = [A.Resize(height=size, width=size, p=1.0)]
     return A.Compose(augms)(image=sample["image"], mask=sample["mask"])
+
+
+def whu_train_augm(sample: dict, target_size: int = 512) -> dict:
+    """Training augmentation for WHU-Opt-SAR.
+
+    Pipeline: pad -> random crop -> random rotate (-180° to +180°).
+
+    Args:
+        sample: dict with keys "image" (numpy array) and "mask".
+        target_size: Target patch size.
+
+    Returns:
+        Augmented image/mask pair.
+    """
+    img = sample["image"]
+    msk = sample["mask"]
+
+    # h, w = msk.shape[:2]
+
+    # Pad to target_size if smaller
+    # pad_h = max(0, target_size - h)
+    # pad_w = max(0, target_size - w)
+
+    # padded_img = TF.pad(img, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2))
+    # padded_msk = TF.pad(msk, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2))
+
+    # Rotation (-180° to +180°)
+    angle = random.uniform(-180.0, 180.0)
+    img = TF.rotate(img, angle, InterpolationMode.BICUBIC)
+    msk = TF.rotate(msk, angle, InterpolationMode.NEAREST)
+
+    # Random crop to target_size
+    i = random.randint(0, max(1, img.size[1] - target_size))
+    j = random.randint(0, max(1, img.size[0] - target_size))
+
+    img = TF.crop(img, i, j, target_size, target_size)
+    msk = TF.crop(msk, i, j, target_size, target_size)
+
+    sample["image"] = img
+    sample["mask"] = msk
+
+    return sample
+
+
+def whu_valid_augm(sample: dict, target_size: int = 512) -> dict:
+    """Validation augmentation for WHU-Opt-SAR.
+
+    Pipeline: pad -> uniform random crop (no rotation).
+
+    Args:
+        sample: dict with keys "image" (numpy array) and "mask".
+        target_size: Target patch size.
+
+    Returns:
+        Cropped image/mask pair.
+    """
+    img = sample["image"]
+    msk = sample["mask"]
+
+    # h, w = msk.shape[:2]
+
+    # Pad if smaller than target_size
+    # pad_h = max(0, target_size - h)
+    # pad_w = max(0, target_size - w)
+
+    # padded_img = TF.pad(img, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2))
+    # padded_msk = TF.pad(msk, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2))
+
+    # Random crop to target_size
+    i = random.randint(0, max(1, img.size[1] - target_size))
+    j = random.randint(0, max(1, img.size[0] - target_size))
+
+    cropped_img = TF.crop(img, i, j, target_size, target_size)
+    cropped_msk = TF.crop(msk, i, j, target_size, target_size)
+
+    sample["image"] = cropped_img
+    sample["mask"] = cropped_msk
+
+    return sample
