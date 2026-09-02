@@ -1,8 +1,8 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
-from .dynconv import AttDynConv, WMDynConv, WPDynConv
+from .dynconv import AttDynConv, DepthwiseDynConv, LoRaDynConv, WMDynConv, WPDynConv
 
 
 def get_conv_and_kwargs(
@@ -11,6 +11,8 @@ def get_conv_and_kwargs(
     downsample_size: int | None = None,
     kernel_gen_hidden: int | None = None,
     demodulate: bool = True,
+    reduction: int | None = None,
+    rank: int | None = None,
 ) -> tuple[type[nn.Module], dict]:
     """Helper function to get correct convolution type and respective necessary kwargs."""
 
@@ -43,9 +45,31 @@ def get_conv_and_kwargs(
             "kernel_gen_hidden": kernel_gen_hidden,
             "demodulate": demodulate,
         }
+    elif conv_type == "depth-dynamic":
+        if reduction is None:
+            raise ValueError(
+                "For depthwise dynamic convolutions, 'reduction' must be provided."
+            )
+        return DepthwiseDynConv, {
+            "kernel_size": 3,
+            "stride": 1,
+            "reduction": reduction,
+        }
+    elif conv_type == "lora-dynamic":
+        if rank is None or reduction is None:
+            raise ValueError(
+                "For LoRa dynamic convolutions, 'rank' and 'reduction' must be provided."
+            )
+        return LoRaDynConv, {
+            "kernel_size": 3,
+            "stride": 1,
+            "rank": rank,
+            "reduction": reduction,
+        }
     else:
         raise ValueError(
-            f"Unsupported convolution type: '{conv_type}'. Supported types: ['static', 'attention-dynamic', 'input-dynamic', 'wm-dynamic']."
+            f"Unsupported convolution type: '{conv_type}'. "
+            "Supported types: ['static', 'att-dynamic', 'wp-dynamic', 'wm-dynamic', 'depth-dynamic', 'lora-dynamic']."
         )
 
 
@@ -151,6 +175,8 @@ class UNet(nn.Module):
         downsample_size: int | None = None,
         kernel_gen_hidden: int | None = None,
         demodulate: bool = True,
+        reduction: int | None = None,
+        rank: int | None = None,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -158,7 +184,13 @@ class UNet(nn.Module):
         self.num_layers = num_layers
         self.upsample = upsample
         self.conv, self.conv_kwargs = get_conv_and_kwargs(
-            conv_type, K, downsample_size, kernel_gen_hidden, demodulate
+            conv_type,
+            K,
+            downsample_size,
+            kernel_gen_hidden,
+            demodulate,
+            reduction,
+            rank,
         )
 
         self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)

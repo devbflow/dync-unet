@@ -54,13 +54,16 @@ class AttDynConv(nn.Module):
 
         # Aggregate kernels and biases
         aggregated_weight = torch.sum(
-            attention_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) * self.weight,
+            attention_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            * self.weight,
             dim=1,
         )
 
         aggregated_bias = None
         if self.bias is not None:
-            aggregated_bias = torch.sum(attention_weights.unsqueeze(-1) * self.bias, dim=1)
+            aggregated_bias = torch.sum(
+                attention_weights.unsqueeze(-1) * self.bias, dim=1
+            )
 
         # Reshape for grouped convolution to apply batch-specific kernels
         x = x.view(1, N * C, H, W)
@@ -71,7 +74,9 @@ class AttDynConv(nn.Module):
         if aggregated_bias is not None:
             aggregated_bias = aggregated_bias.view(N * self.out_channels)
 
-        out = F.conv2d(x, aggregated_weight, aggregated_bias, self.stride, self.padding, groups=N)
+        out = F.conv2d(
+            x, aggregated_weight, aggregated_bias, self.stride, self.padding, groups=N
+        )
         out = out.view(N, self.out_channels, out.size(-2), out.size(-1))
 
         return out
@@ -120,7 +125,9 @@ class WPDynConv(nn.Module):
         downsampled = F.adaptive_avg_pool2d(x, self.downsample_size)
         downsampled = self.channel_reduce(downsampled)
 
-        flattened_weights = self.kernel_generator(downsampled.flatten(start_dim=-2, end_dim=-1))
+        flattened_weights = self.kernel_generator(
+            downsampled.flatten(start_dim=-2, end_dim=-1)
+        )
         dyn_conv_weights = flattened_weights.reshape(
             N * self.out_channels, C, self.kernel_size, self.kernel_size
         )
@@ -138,6 +145,153 @@ class WPDynConv(nn.Module):
 
         output = output_grouped.view(N, self.out_channels, H, W)
         return output
+
+
+class DepthwiseDynConv(nn.Module):
+    """
+    Dynamic Convolution using Dynamic Depthwise + Static Pointwise filters.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 3,
+        stride: int = 1,
+        reduction: int = 4,
+        **kwargs,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = kernel_size // 2
+
+        hidden_dim = max(in_channels // reduction, 16)
+        num_dw_params = in_channels * kernel_size * kernel_size
+
+        # Squeeze-and-Excitation style global context generator
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.kernel_generator = nn.Sequential(
+            nn.Linear(in_channels, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, num_dw_params),
+        )
+
+        # Static Pointwise Conv for inter-channel interaction
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, H, W = x.shape
+
+        # 1. Predict Depthwise Kernel Weights per sample in batch
+        context = self.gap(x).view(B, C)
+        dw_weights = self.kernel_generator(context)  # (B, C * K * K)
+        dw_weights = dw_weights.view(B * C, 1, self.kernel_size, self.kernel_size)
+
+        # 2. Reshape input for batch-wise grouped convolution
+        x_grouped = x.view(1, B * C, H, W)
+
+        # 3. Dynamic Depthwise Conv (groups = B * C)
+        out_dw = F.conv2d(
+            x_grouped,
+            weight=dw_weights,
+            bias=None,
+            stride=self.stride,
+            padding=self.padding,
+            groups=B * C,
+        )
+
+        # 4. Reshape back and apply static Pointwise Conv
+        out_dw = out_dw.view(B, C, H, W)
+        out = self.conv(out_dw)
+        return out
+
+
+class LoRaDynConv(nn.Module):
+    """
+    Dynamic Kernel Generator using static base weights combined with
+    low-rank dynamic adaptation matrices (W_dyn = W_base + U @ V).
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 3,
+        stride: int = 1,
+        rank: int = 4,
+        reduction: int = 4,
+        **kwargs,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = kernel_size // 2
+        self.rank = rank
+
+        # Static base weight tensor
+        self.base_weight = nn.Parameter(
+            torch.randn(out_channels, in_channels, kernel_size, kernel_size)
+        )
+        nn.init.kaiming_normal_(self.base_weight, mode="fan_out", nonlinearity="relu")
+
+        # Hypernet predicting low-rank U and V factors
+        hidden_dim = max(in_channels // reduction, 16)
+        self.gap = nn.AdaptiveAvgPool2d(1)
+
+        u_dim = out_channels * rank
+        v_dim = rank * in_channels * kernel_size * kernel_size
+
+        self.hypernet = nn.Sequential(
+            nn.Linear(in_channels, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, u_dim + v_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, H, W = x.shape
+
+        # Global context vector
+        context = self.gap(x).view(B, C)
+        dynamic_params = self.hypernet(context)
+
+        u_dim = self.out_channels * self.rank
+        u_flat, v_flat = dynamic_params.split(
+            [u_dim, dynamic_params.shape[1] - u_dim], dim=1
+        )
+
+        # Reshape factors: U -> (B, C_out, rank), V -> (B, rank, C_in * K * K)
+        U = u_flat.view(B, self.out_channels, self.rank)
+        V = v_flat.view(
+            B, self.rank, self.in_channels * self.kernel_size * self.kernel_size
+        )
+
+        # Compute dynamic residual offset delta_W = U @ V -> (B, C_out, C_in, K, K)
+        delta_W = torch.bmm(U, V).view(
+            B, self.out_channels, self.in_channels, self.kernel_size, self.kernel_size
+        )
+
+        # Aggregate static base weight with dynamic residual offset
+        weights = self.base_weight.unsqueeze(0) + delta_W
+        weights = weights.view(
+            B * self.out_channels, self.in_channels, self.kernel_size, self.kernel_size
+        )
+
+        x_grouped = x.view(1, B * C, H, W)
+        out = F.conv2d(
+            x_grouped,
+            weight=weights,
+            bias=None,
+            stride=self.stride,
+            padding=self.padding,
+            groups=B,
+        )
+
+        return out.view(B, self.out_channels, H, W)
 
 
 class WMDynConv(nn.Module):
@@ -170,9 +324,14 @@ class WMDynConv(nn.Module):
         self.scale_generator = nn.Sequential(
             nn.Linear(self.downsample_size * self.downsample_size, kernel_gen_hidden),
             nn.ReLU(),
-            nn.Linear(kernel_gen_hidden, in_channels if self.input_modulation else out_channels),
+            nn.Linear(
+                kernel_gen_hidden,
+                in_channels if self.input_modulation else out_channels,
+            ),
         )
-        self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
+        self.weight = nn.Parameter(
+            torch.randn(out_channels, in_channels, kernel_size, kernel_size)
+        )
 
     def forward(self, x: torch.Tensor):
         """Processes the input tensor x through the dynamic convolution using
@@ -200,7 +359,9 @@ class WMDynConv(nn.Module):
             dcoefs = torch.rsqrt(weights.pow(2).sum(dim=[2, 3, 4]) + self.eps)
             weights = weights * dcoefs.view(N, self.out_channels, 1, 1, 1)
 
-        weights = weights.view(N * self.out_channels, C, self.kernel_size, self.kernel_size)
+        weights = weights.view(
+            N * self.out_channels, C, self.kernel_size, self.kernel_size
+        )
 
         grouped_input = x.view(1, N * C, H, W)
 

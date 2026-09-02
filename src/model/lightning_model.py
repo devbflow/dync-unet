@@ -32,14 +32,23 @@ class UNetLightningModule(pl.LightningModule):
         downsample_size: int | None = None,
         kernel_gen_hidden: int | None = None,
         demodulate: bool = True,
+        reduction: int | None = None,
+        rank: int | None = None,
         log_img_every_n_epoch: int = 50,
         debug: bool = False,
     ):
         super().__init__()
 
         self.save_hyperparameters()
-        assert conv_type in ("static", "att-dynamic", "wp-dynamic", "wm-dynamic"), (
-            f"'{conv_type}' not supported. Should be 'static' or 'att/wp/wm-dynamic'."
+        assert conv_type in (
+            "static",
+            "att-dynamic",
+            "wp-dynamic",
+            "wm-dynamic",
+            "lora-dynamic",
+            "depth-dynamic",
+        ), (
+            f"'{conv_type}' not supported. Should be 'static' or 'att/wp/wm/lora/depth-dynamic'."
         )
         # torch.set_float32_matmul_precision("medium")
 
@@ -55,6 +64,8 @@ class UNetLightningModule(pl.LightningModule):
             downsample_size=downsample_size,
             kernel_gen_hidden=kernel_gen_hidden,
             demodulate=demodulate,
+            rank=rank,
+            reduction=reduction,
         )
 
         self.loss_fn = nn.CrossEntropyLoss()
