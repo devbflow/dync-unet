@@ -12,6 +12,7 @@ Naming schemes:
 
 import argparse
 import shutil
+import sys
 from pathlib import Path
 
 # Dataset mapping
@@ -58,6 +59,7 @@ def get_new_name(conv_type: str, hparams: dict) -> str | None:
     num_layers = hparams.get("num_layers", 0)
     lr_str = parse_lr(hparams.get("lr"))
     data_type = str(hparams.get("data_type", "sar")).lower()
+    dyn_placement = str(hparams.get("dyn_placement", "full")).lower()
 
     # Common base parts
     parts = [str(initial_planes), str(num_layers)]
@@ -66,25 +68,25 @@ def get_new_name(conv_type: str, hparams: dict) -> str | None:
         k_val = hparams.get("K")
         if k_val is not None:
             parts.append(str(k_val))
-        parts.extend([lr_str, dataset, data_type])
+        parts.extend([lr_str, dataset, data_type, dyn_placement])
         return f"att_{'_'.join(parts)}"
 
     elif conv_type in ("stat", "static"):
-        parts.extend([lr_str, dataset, data_type])
+        parts.extend([lr_str, dataset, data_type, dyn_placement])
         return f"stat_{'_'.join(parts)}"
 
     elif conv_type in ("wp-dynamic", "wp"):
         kh_val = hparams.get("kernel_gen_hidden")
         if kh_val is not None:
             parts.append(str(kh_val))
-        parts.extend([lr_str, dataset, data_type])
+        parts.extend([lr_str, dataset, data_type, dyn_placement])
         return f"wp_{'_'.join(parts)}"
 
     elif conv_type in ("wm-dynamic", "wm"):
         kh_val = hparams.get("kernel_gen_hidden")
         if kh_val is not None:
             parts.append(str(kh_val))
-        parts.extend([lr_str, dataset, data_type])
+        parts.extend([lr_str, dataset, data_type, dyn_placement])
         return f"wm_{'_'.join(parts)}"
 
     elif conv_type in ("lora-dynamic", "lora"):
@@ -95,7 +97,7 @@ def get_new_name(conv_type: str, hparams: dict) -> str | None:
 
     elif conv_type in ("depth-dynamic", "depth"):
         reduction = hparams.get("reduction", "")
-        parts.extend([str(reduction), lr_str, dataset, data_type])
+        parts.extend([str(reduction), lr_str, dataset, data_type, dyn_placement])
         return f"depth_{'_'.join(parts)}"
 
     else:
@@ -284,4 +286,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

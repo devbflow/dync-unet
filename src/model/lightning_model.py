@@ -28,6 +28,7 @@ class UNetLightningModule(pl.LightningModule):
         num_layers: int = 4,
         initial_planes: int = 64,
         lr: float = 1e-3,
+        dyn_placement: str = "full",
         K: int | None = None,
         downsample_size: int | None = None,
         kernel_gen_hidden: int | None = None,
@@ -60,6 +61,7 @@ class UNetLightningModule(pl.LightningModule):
             num_layers=num_layers,
             upsample=True,
             conv_type=conv_type,
+            dyn_placement=dyn_placement,
             K=K,
             downsample_size=downsample_size,
             kernel_gen_hidden=kernel_gen_hidden,
@@ -102,6 +104,7 @@ class UNetLightningModule(pl.LightningModule):
             on_step=True,
             on_epoch=True,
             logger=True,
+            batch_size=input_imgs.shape[0],
         )
 
         if (
@@ -142,6 +145,7 @@ class UNetLightningModule(pl.LightningModule):
             on_step=False,
             on_epoch=True,
             logger=True,
+            batch_size=input_imgs.shape[0],
         )
 
         if (

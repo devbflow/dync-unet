@@ -33,6 +33,7 @@ def get_conv_and_kwargs(
             "kernel_size": 3,
             "downsample_size": downsample_size,
             "kernel_gen_hidden": kernel_gen_hidden,
+            "reduction": reduction,
         }
     elif conv_type == "wm-dynamic":
         if downsample_size is None or kernel_gen_hidden is None:
@@ -171,6 +172,7 @@ class UNet(nn.Module):
         num_layers: int = 4,
         upsample: bool = True,
         conv_type: str = "static",
+        dyn_placement: str = "full",
         K: int | None = None,
         downsample_size: int | None = None,
         kernel_gen_hidden: int | None = None,
@@ -183,8 +185,18 @@ class UNet(nn.Module):
         self.num_classes = num_classes
         self.num_layers = num_layers
         self.upsample = upsample
-        self.conv, self.conv_kwargs = get_conv_and_kwargs(
-            conv_type,
+
+        self.enc_conv, self.enc_conv_kwargs = get_conv_and_kwargs(
+            conv_type if dyn_placement in ("enc", "full") else "static",
+            K,
+            downsample_size,
+            kernel_gen_hidden,
+            demodulate,
+            reduction,
+            rank,
+        )
+        self.dec_conv, self.dec_conv_kwargs = get_conv_and_kwargs(
+            conv_type if dyn_placement in ("dec", "full") else "static",
             K,
             downsample_size,
             kernel_gen_hidden,
@@ -193,16 +205,18 @@ class UNet(nn.Module):
             rank,
         )
 
-        self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)
+        self.inc = DoubleConv(
+            self.enc_conv, in_channels, initial_planes, self.enc_conv_kwargs
+        )
 
         # Encoder
         self.enc_modules = nn.ModuleList(
             [
                 DownBlock(
-                    self.conv,
+                    self.enc_conv,
                     initial_planes * 2**i,
                     initial_planes * 2 ** (i + 1),
-                    self.conv_kwargs,
+                    self.enc_conv_kwargs,
                 )
                 for i in range(self.num_layers)
             ]
@@ -212,10 +226,10 @@ class UNet(nn.Module):
         self.dec_modules = nn.ModuleList(
             [
                 UpBlock(
-                    self.conv,
+                    self.dec_conv,
                     initial_planes * 2**j + initial_planes * 2 ** (j - 1),
                     initial_planes * 2 ** (j - 1),
-                    self.conv_kwargs,
+                    self.dec_conv_kwargs,
                     upsample,
                 )
                 for j in range(self.num_layers, 0, -1)

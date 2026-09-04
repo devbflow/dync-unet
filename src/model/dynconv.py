@@ -102,11 +102,24 @@ class WPDynConv(nn.Module):
         self.padding = kernel_size // 2  # "same"
         self.downsample_size = min(downsample_size, 128)
 
+        # optionally supply reduction instead
+        if reduction := kwargs.get("reduction"):
+            kernel_gen_hidden = max(in_channels // reduction, 16)
+
         self.num_kernel_params = out_channels * in_channels * kernel_size * kernel_size
 
-        self.channel_reduce = nn.Conv2d(in_channels, 1, 1)
+        # halve downsampled's HxW dims
+        self.reduce = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=1,
+            kernel_size=3,
+            stride=2,
+            padding=self.padding,
+        )
         self.kernel_generator = nn.Sequential(
-            nn.Linear(self.downsample_size * self.downsample_size, kernel_gen_hidden),
+            nn.Linear(
+                (self.downsample_size * self.downsample_size) // 4, kernel_gen_hidden
+            ),
             nn.ReLU(),
             nn.Linear(kernel_gen_hidden, self.num_kernel_params),
         )
@@ -123,7 +136,7 @@ class WPDynConv(nn.Module):
         N, C, H, W = x.size()
 
         downsampled = F.adaptive_avg_pool2d(x, self.downsample_size)
-        downsampled = self.channel_reduce(downsampled)
+        downsampled = self.reduce(downsampled)
 
         flattened_weights = self.kernel_generator(
             downsampled.flatten(start_dim=-2, end_dim=-1)
