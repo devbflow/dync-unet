@@ -1,13 +1,15 @@
 """
 Script to rename version_ folders in tensorboard logs based on hparams.yaml configuration.
+max_steps is parsed from config.yaml under trainer.max_steps in the same folder as hparams.yaml.
 
 Naming schemes:
-- att-dynamic   -> att_<initial_planes>_<num_layers>_<K>_<lr>_<dataset>_<data_type>
-- stat          -> stat_<initial_planes>_<num_layers>_<lr>_<dataset>_<data_type>
-- wp-dynamic    -> wp_<initial_planes>_<num_layers>_<kernel_gen_hidden>_<lr>_<dataset>_<data_type>
-- wm-dynamic    -> wm_<initial_planes>_<num_layers>_<kernel_gen_hidden>_<lr>_<dataset>_<data_type>
-- lora-dynamic  -> lora_<initial_planes>_<num_layers>_<rank>_<reduction>_<lr>_<dataset>_<data_type>
-- depth-dynamic -> depth_<initial_planes>_<num_layers>_<reduction>_<lr>_<dataset>_<data_type>
+- att-dynamic   -> att_<initial_planes>_<num_layers>_<K>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
+- stat          -> stat_<initial_planes>_<num_layers>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
+- wp-dynamic    -> wp_<initial_planes>_<num_layers>_<kernel_gen_hidden>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
+OR (if reduction not null)      -> wp_<initial_planes>_<num_layers>_<reduction>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
+- wm-dynamic    -> wm_<initial_planes>_<num_layers>_<kernel_gen_hidden>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
+- lora-dynamic  -> lora_<initial_planes>_<num_layers>_<rank>_<reduction>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
+- depth-dynamic -> depth_<initial_planes>_<num_layers>_<reduction>_<lr>_<dataset>_<data_type>_<dyn_placement>_<max_steps>
 """
 
 import argparse
@@ -15,11 +17,21 @@ import shutil
 import sys
 from pathlib import Path
 
+import yaml
+
 # Dataset mapping
 DATASET_MAP = {
     "OpenEarthMap-SAR": "oem",
     "whu-opt-sar": "whu",
 }
+
+
+def load_yaml(yaml_path: Path) -> dict:
+    """Load YAML file using PyYAML."""
+    if not yaml_path.exists():
+        return {}
+    with open(yaml_path, "r") as f:
+        return yaml.safe_load(f) or {}
 
 
 def extract_dataset_from_data_dir(data_dir: str) -> str | None:
@@ -49,8 +61,10 @@ def parse_lr(lr_val) -> str:
         return str(lr_val)
 
 
-def get_new_name(conv_type: str, hparams: dict) -> str | None:
-    """Generate new folder name based on conv_type and hparams."""
+def get_new_name(
+    conv_type: str, hparams: dict, max_steps: str | int | None
+) -> str | None:
+    """Generate new folder name based on conv_type, hparams, and max_steps."""
     dataset = extract_dataset_from_data_dir(hparams.get("data_dir", ""))
     if not dataset:
         return None
@@ -58,91 +72,67 @@ def get_new_name(conv_type: str, hparams: dict) -> str | None:
     initial_planes = hparams.get("initial_planes", 0)
     num_layers = hparams.get("num_layers", 0)
     lr_str = parse_lr(hparams.get("lr"))
-    data_type = str(hparams.get("data_type", "sar")).lower()
+    data_type = str(hparams.get("data_type", "rgb")).lower()
     dyn_placement = str(hparams.get("dyn_placement", "full")).lower()
+    max_steps_str = "null" if max_steps is None else str(max_steps)
 
-    # Common base parts
     parts = [str(initial_planes), str(num_layers)]
 
     if conv_type in ("att-dynamic", "att"):
         k_val = hparams.get("K")
         if k_val is not None:
             parts.append(str(k_val))
-        parts.extend([lr_str, dataset, data_type, dyn_placement])
+        parts.extend([lr_str, dataset, data_type, dyn_placement, max_steps_str])
         return f"att_{'_'.join(parts)}"
 
     elif conv_type in ("stat", "static"):
-        parts.extend([lr_str, dataset, data_type, dyn_placement])
+        parts.extend([lr_str, dataset, data_type, dyn_placement, max_steps_str])
         return f"stat_{'_'.join(parts)}"
 
     elif conv_type in ("wp-dynamic", "wp"):
-        kh_val = hparams.get("kernel_gen_hidden")
-        if kh_val is not None:
-            parts.append(str(kh_val))
-        parts.extend([lr_str, dataset, data_type, dyn_placement])
+        reduction = hparams.get("reduction")
+        if reduction is not None:
+            parts.append(str(reduction))
+        else:
+            kh_val = hparams.get("kernel_gen_hidden")
+            if kh_val is not None:
+                parts.append(str(kh_val))
+        parts.extend([lr_str, dataset, data_type, dyn_placement, max_steps_str])
         return f"wp_{'_'.join(parts)}"
 
     elif conv_type in ("wm-dynamic", "wm"):
         kh_val = hparams.get("kernel_gen_hidden")
         if kh_val is not None:
             parts.append(str(kh_val))
-        parts.extend([lr_str, dataset, data_type, dyn_placement])
+        parts.extend([lr_str, dataset, data_type, dyn_placement, max_steps_str])
         return f"wm_{'_'.join(parts)}"
 
     elif conv_type in ("lora-dynamic", "lora"):
         rank = hparams.get("rank", "")
         reduction = hparams.get("reduction", "")
-        parts.extend([str(rank), str(reduction), lr_str, dataset, data_type])
+        parts.extend(
+            [
+                str(rank),
+                str(reduction),
+                lr_str,
+                dataset,
+                data_type,
+                dyn_placement,
+                max_steps_str,
+            ]
+        )
         return f"lora_{'_'.join(parts)}"
 
     elif conv_type in ("depth-dynamic", "depth"):
         reduction = hparams.get("reduction", "")
-        parts.extend([str(reduction), lr_str, dataset, data_type, dyn_placement])
+        parts.extend(
+            [str(reduction), lr_str, dataset, data_type, dyn_placement, max_steps_str]
+        )
         return f"depth_{'_'.join(parts)}"
 
     else:
         print(f"  Unknown conv_type: {conv_type}")
         return None
-
-
-def load_hparams(hparams_path: Path) -> dict:
-    """Load hparams.yaml file."""
-    try:
-        import yaml
-
-        with open(hparams_path, "r") as f:
-            return yaml.safe_load(f) or {}
-    except ImportError:
-        print("  Warning: PyYAML not installed. Using basic YAML parsing.")
-        hparams = {}
-        try:
-            with open(hparams_path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if ":" in line and not line.startswith("#"):
-                        key, _, value = line.partition(":")
-                        key = key.strip()
-                        value = value.strip().strip('"').strip("'")
-                        try:
-                            if "." in value or "e" in value.lower():
-                                hparams[key] = float(value)
-                            elif value.lower() == "true":
-                                hparams[key] = True
-                            elif value.lower() == "false":
-                                hparams[key] = False
-                            elif value.lower() == "null":
-                                hparams[key] = None
-                            else:
-                                hparams[key] = int(value) if value.isdigit() else value
-                        except ValueError:
-                            hparams[key] = value
-            return hparams
-        except Exception as e:
-            print(f"  Error reading hparams.yaml: {e}")
-            return {}
-    except Exception as e:
-        print(f"  Error loading hparams from {hparams_path}: {e}")
-        return {}
 
 
 def get_new_unique_name(base_name: str, parent_dir: Path) -> str:
@@ -164,7 +154,7 @@ def rename_version_folder(
     root_dir: Path, version_dir: Path, dry_run: bool = False
 ) -> tuple[str, bool]:
     """
-    Rename a version_ folder.
+    Rename a version_ folder based on hparams.yaml and config.yaml.
 
     Returns: (status_message, is_renamed)
     """
@@ -173,13 +163,18 @@ def rename_version_folder(
     if not hparams_path.exists():
         return f"⚠ Skipped {version_dir.relative_to(root_dir)} (no hparams.yaml)", False
 
-    hparams = load_hparams(hparams_path)
+    hparams = load_yaml(hparams_path)
     conv_type = str(hparams.get("conv_type", "")).strip()
 
     if not conv_type:
         return f"⚠ Skipped {version_dir.relative_to(root_dir)} (no conv_type)", False
 
-    new_base_name = get_new_name(conv_type, hparams)
+    config_path = version_dir / "config.yaml"
+    config = load_yaml(config_path)
+    trainer_cfg = config.get("trainer", {}) if isinstance(config, dict) else {}
+    max_steps = trainer_cfg.get("max_steps") if isinstance(trainer_cfg, dict) else None
+
+    new_base_name = get_new_name(conv_type, hparams, max_steps)
     if new_base_name is None:
         return (
             f"⚠ Skipped {version_dir.relative_to(root_dir)} (invalid dataset or conv_type)",
@@ -213,7 +208,6 @@ def find_version_folders(root_dir: Path) -> list[Path]:
         if item.is_dir() and item.name.startswith("version_")
     ]
 
-    # Sort by version index for predictable order
     def extract_num(p: Path):
         parts = p.name.split("_")
         return int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
@@ -224,7 +218,7 @@ def find_version_folders(root_dir: Path) -> list[Path]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rename version_ folders in tensorboard logs based on hparams.yaml"
+        description="Rename version_ folders in tensorboard logs based on hparams.yaml and config.yaml"
     )
     parser.add_argument(
         "--root-dir",
