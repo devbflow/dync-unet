@@ -7,9 +7,9 @@ import torchvision
 from matplotlib import pyplot as plt
 from PIL import Image
 from torch import nn, optim
-from torchmetrics.classification import MulticlassConfusionMatrix
+from torchmetrics.classification import MulticlassConfusionMatrix, MulticlassF1Score
+from torchmetrics.segmentation import MeanIoU
 
-from src.utils.metrics import FBetaScore, IoU
 from src.utils.visualization import (
     draw_segment_image,
     get_num_classes,
@@ -71,8 +71,8 @@ class UNetLightningModule(pl.LightningModule):
         )
 
         self.loss_fn = nn.CrossEntropyLoss()
-        self.f_score = FBetaScore()
-        self.iou = IoU()
+        self.f_score = MulticlassF1Score(num_classes=num_classes, average="macro")
+        self.iou = MeanIoU(num_classes=num_classes, input_format="index")
         self.train_conf_matrix = MulticlassConfusionMatrix(
             num_classes, normalize="true"
         )
@@ -84,20 +84,15 @@ class UNetLightningModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
         pred = self.forward(input_imgs)
-
         masks = masks.to(torch.float32)
+
         loss = self.loss_fn(pred, masks)
-        # print(f"LOSS: {loss}")
-        # print(f"MASKS Shape/Min/Max: {masks.shape} / {masks.min()} / {masks.max()}")
-        # for c in range(masks.shape[1]):
-        #     print(f"CLASS {c}:")
-        #     print("MIN:", masks[0, c, :, :].min(), "MAX:", masks[0, c, :, :].max())
-        # print(f"INPUT Shape/Min/Max: {input_imgs.shape} / {input_imgs.min()} /{input_imgs.max()}")
-        # print(f"PRED Shape/Min/Max: {pred.shape} / {pred.min()} / {pred.max()}")
         with torch.no_grad():
-            iou = self.iou(pred, masks)
-            fscore = self.f_score(pred, masks)
-            self.train_conf_matrix.update(pred.argmax(dim=1), masks.argmax(dim=1))
+            pred_disc = pred.argmax(dim=1)
+            masks_disc = masks.argmax(dim=1)
+            iou = self.iou(pred_disc, masks_disc)
+            fscore = self.f_score(pred_disc, masks_disc)
+            self.train_conf_matrix.update(pred_disc, masks_disc)
 
         self.log_dict(
             {"train_loss": loss, "train_mIoU": iou, "train_fscore": fscore},
@@ -133,12 +128,15 @@ class UNetLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         input_imgs, masks, _ = batch
         pred = self.forward(input_imgs)
+        pred_disc = pred.argmax(dim=1)
 
         masks = masks.to(torch.float32)
+        masks_disc = masks.argmax(dim=1)
+
         loss = self.loss_fn(pred, masks)
-        iou = self.iou(pred, masks)
-        fscore = self.f_score(pred, masks)
-        self.val_conf_matrix.update(pred.argmax(dim=1), masks.argmax(dim=1))
+        iou = self.iou(pred_disc, masks_disc)
+        fscore = self.f_score(pred_disc, masks_disc)
+        self.val_conf_matrix.update(pred_disc, masks_disc)
 
         self.log_dict(
             {"val_loss": loss, "val_mIoU": iou, "val_fscore": fscore},
