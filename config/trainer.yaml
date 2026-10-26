@@ -1,0 +1,18 @@
+logger: true
+max_epochs: 1000
+max_steps: 50000
+max_time: 07:00:00:00
+num_sanity_val_steps: 2
+log_every_n_steps: 50
+default_root_dir: ./
+fast_dev_run: False
+overfit_batches: 0.0
+enable_progress_bar: False
+enable_checkpointing: True
+callbacks:
+  - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+    init_args:
+      monitor: val_loss
+      save_last: True
+      save_top_k: 1
+      every_n_epochs: 200

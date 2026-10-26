@@ -1,114 +1,77 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
+
+from .dynconv import AttDynConv, DepthwiseDynConv, LoRaDynConv, WMDynConv, WPDynConv
 
 
 def get_conv_and_kwargs(
-    conv_type: str = "static", K: int = None
-) -> tuple[nn.Module, dict]:
-    """Helper function to get correct convolution type and respective necessary kwargs.
+    conv_type: str = "static",
+    K: int | None = None,
+    downsample_size: int | None = None,
+    kernel_gen_hidden: int | None = None,
+    demodulate: bool = True,
+    reduction: int | None = None,
+    rank: int | None = None,
+) -> tuple[type[nn.Module], dict]:
+    """Helper function to get correct convolution type and respective necessary kwargs."""
 
-    Args:
-        conv_type (str): (supported) type of convolution. 'static' or 'dynamic'. Defaults to 'static'.
-        K (int, optional): number of kernels for dynamic conv. Defaults to None.
-
-    Raises:
-        ValueError: if conv_type is unsupported or required arguments are missing
-
-    Returns:
-        tuple[nn.Module, dict]: convolution Module and specific kwargs
-    """
     if conv_type == "static":
-        return nn.Conv2d, {}
-    elif conv_type == "dynamic":
+        return nn.Conv2d, {"kernel_size": 3, "stride": 1, "padding": 1, "bias": False}
+    elif conv_type == "att-dynamic":
         if K is None:
             raise ValueError(
-                "For dynamic convolutions, number of kernels 'K' must be provided."
+                "For attention dynamic convolutions, number of kernels 'K' must be provided."
             )
-        return DynConv, {"K": K}
+        return AttDynConv, {"kernel_size": 3, "stride": 1, "padding": 1, "K": K}
+    elif conv_type == "wp-dynamic":
+        if downsample_size is None or kernel_gen_hidden is None:
+            raise ValueError(
+                "For weight prediction dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
+            )
+        return WPDynConv, {
+            "kernel_size": 3,
+            "downsample_size": downsample_size,
+            "kernel_gen_hidden": kernel_gen_hidden,
+            "reduction": reduction,
+        }
+    elif conv_type == "wm-dynamic":
+        if downsample_size is None or kernel_gen_hidden is None:
+            raise ValueError(
+                "For weight modulation dynamic convolutions, 'downsample_size' and 'kernel_gen_hidden' must be provided."
+            )
+        return WMDynConv, {
+            "kernel_size": 3,
+            "downsample_size": downsample_size,
+            "kernel_gen_hidden": kernel_gen_hidden,
+            "demodulate": demodulate,
+        }
+    elif conv_type == "depth-dynamic":
+        if reduction is None:
+            raise ValueError(
+                "For depthwise dynamic convolutions, 'reduction' must be provided."
+            )
+        return DepthwiseDynConv, {
+            "kernel_size": 3,
+            "stride": 1,
+            "reduction": reduction,
+        }
+    elif conv_type == "lora-dynamic":
+        if rank is None or reduction is None:
+            raise ValueError(
+                "For LoRa dynamic convolutions, 'rank' and 'reduction' must be provided."
+            )
+        return LoRaDynConv, {
+            "kernel_size": 3,
+            "stride": 1,
+            "rank": rank,
+            "reduction": reduction,
+        }
     else:
         raise ValueError(
-            f"Unsupported convolution type: '{conv_type}'. Supported types: 'static' or 'dynamic'."
+            f"Unsupported convolution type: '{conv_type}'. "
+            "Supported types: ['static', 'att-dynamic', 'wp-dynamic', 'wm-dynamic', 'depth-dynamic', 'lora-dynamic']."
         )
-
-
-class DynConv(nn.Module):
-    """
-    Dynamic Convolution layer as proposed in "Dynamic Convolution: Attention Over Convolution Kernels".
-    It aggregates multiple parallel convolution kernels dynamically based on input-dependent attention.
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: int = 3,
-        stride: int = 1,
-        padding: int = 1,
-        bias: bool = False,
-        K: int = 4,
-    ):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.K = K
-
-        # K sets of convolution kernels and biases
-        self.weight = nn.Parameter(
-            torch.randn(K, out_channels, in_channels, kernel_size, kernel_size)
-        )
-        if bias:
-            self.bias = nn.Parameter(torch.randn(K, out_channels))
-        else:
-            self.register_parameter("bias", None)
-
-        # Attention mechanism (similar to Squeeze-and-Excitation)
-        self.attention_pooling = nn.AdaptiveAvgPool2d(1)
-        self.attention_fc1 = nn.Linear(in_channels, in_channels // 4)
-        self.attention_relu = nn.ReLU(inplace=True)
-        self.attention_fc2 = nn.Linear(in_channels // 4, K)
-
-    def forward(self, x: torch.Tensor):
-        N, C, H, W = x.size()
-
-        # Compute attention weights
-        attention_input = self.attention_pooling(x).view(N, C)
-        attention_weights = self.attention_fc2(
-            self.attention_relu(self.attention_fc1(attention_input))
-        )
-        attention_weights = F.softmax(attention_weights, dim=1)
-
-        # Aggregate kernels and biases
-        aggregated_weight = torch.sum(
-            attention_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-            * self.weight,
-            dim=1,
-        )
-
-        aggregated_bias = None
-        if self.bias is not None:
-            aggregated_bias = torch.sum(
-                attention_weights.unsqueeze(-1) * self.bias, dim=1
-            )
-
-        # Reshape for grouped convolution to apply batch-specific kernels
-        x = x.view(1, N * C, H, W)
-        aggregated_weight = aggregated_weight.view(
-            N * self.out_channels, self.in_channels, self.kernel_size, self.kernel_size
-        )
-
-        if aggregated_bias is not None:
-            aggregated_bias = aggregated_bias.view(N * self.out_channels)
-
-        out = F.conv2d(
-            x, aggregated_weight, aggregated_bias, self.stride, self.padding, groups=N
-        )
-        out = out.view(N, self.out_channels, out.size(-2), out.size(-1))
-
-        return out
 
 
 class DoubleConv(nn.Module):
@@ -118,7 +81,7 @@ class DoubleConv(nn.Module):
 
     def __init__(
         self,
-        conv_type: nn.Module,
+        conv_type: type[nn.Module],
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
@@ -143,7 +106,7 @@ class DownBlock(nn.Module):
 
     def __init__(
         self,
-        conv_type: nn.Module,
+        conv_type: type[nn.Module],
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
@@ -163,14 +126,14 @@ class UpBlock(nn.Module):
 
     def __init__(
         self,
-        conv_type: nn.Module,
+        conv_type: type[nn.Module],
         in_channels: int,
         out_channels: int,
         conv_kwargs: dict,
-        bilinear: bool = True,
+        upsample: bool = True,
     ):
         super().__init__()
-        if bilinear:
+        if upsample:
             self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
         else:
             self.up = nn.ConvTranspose2d(
@@ -196,7 +159,9 @@ class UNet(nn.Module):
     """UNet implementation supporting multiple types of convolutional layers.
     Supported are:
         - 'static' == standard convolution (torch.nn.Conv2d)
-        - 'dynamic' == dynamic convolution (DynConv)
+        - 'att-dynamic' == attention dynamic convolution (AttDynConv)
+        - 'wp-dynamic' == weight prediction dynamic convolution (WPDynConv)
+        - 'wm-dynamic' == weight modulation dynamic convolution (WMDynConv)
     """
 
     def __init__(
@@ -205,72 +170,69 @@ class UNet(nn.Module):
         num_classes: int,
         initial_planes: int = 64,
         num_layers: int = 4,
-        bilinear: bool = True,
+        upsample: bool = True,
         conv_type: str = "static",
-        K: int = None,
+        dyn_placement: str = "full",
+        K: int | None = None,
+        downsample_size: int | None = None,
+        kernel_gen_hidden: int | None = None,
+        demodulate: bool = True,
+        reduction: int | None = None,
+        rank: int | None = None,
     ):
         super().__init__()
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.num_layers = num_layers
-        self.bilinear = bilinear
-        self.conv, self.conv_kwargs = get_conv_and_kwargs(conv_type, K)
+        self.upsample = upsample
 
-        self.inc = DoubleConv(self.conv, in_channels, initial_planes, self.conv_kwargs)
+        self.enc_conv, self.enc_conv_kwargs = get_conv_and_kwargs(
+            conv_type if dyn_placement in ("enc", "full") else "static",
+            K,
+            downsample_size,
+            kernel_gen_hidden,
+            demodulate,
+            reduction,
+            rank,
+        )
+        self.dec_conv, self.dec_conv_kwargs = get_conv_and_kwargs(
+            conv_type if dyn_placement in ("dec", "full") else "static",
+            K,
+            downsample_size,
+            kernel_gen_hidden,
+            demodulate,
+            reduction,
+            rank,
+        )
+
+        self.inc = DoubleConv(
+            self.enc_conv, in_channels, initial_planes, self.enc_conv_kwargs
+        )
 
         # Encoder
-        # FIXME: replace by following line later
-        # self.enc_modules = nn.ModuleList([DownBlock(self.conv, initial_planes * 2 ** i, initial_planes * 2 ** (i+1), self.conv_kwargs) for i in range(self.num_layers)])
         self.enc_modules = nn.ModuleList(
             [
                 DownBlock(
-                    self.conv, initial_planes, initial_planes * 2, self.conv_kwargs
-                ),
-                DownBlock(
-                    self.conv, initial_planes * 2, initial_planes * 4, self.conv_kwargs
-                ),
-                DownBlock(
-                    self.conv, initial_planes * 4, initial_planes * 8, self.conv_kwargs
-                ),
-                DownBlock(
-                    self.conv, initial_planes * 8, initial_planes * 16, self.conv_kwargs
-                ),
+                    self.enc_conv,
+                    initial_planes * 2**i,
+                    initial_planes * 2 ** (i + 1),
+                    self.enc_conv_kwargs,
+                )
+                for i in range(self.num_layers)
             ]
         )
 
         # Decoder
-        # FIXME: replace by following line later
-        # self.dec_modules = nn.ModuleList([UpBlock(self.conv, initial_planes * 2 ** j + initial_planes * 2 ** (j - 1), initial_planes * 2 ** (j - 1), self.conv_kwargs, bilinear) for j in range(self.num_layers, 0, -1)])
         self.dec_modules = nn.ModuleList(
             [
                 UpBlock(
-                    self.conv,
-                    initial_planes * 16 + initial_planes * 8,
-                    initial_planes * 8,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
-                UpBlock(
-                    self.conv,
-                    initial_planes * 8 + initial_planes * 4,
-                    initial_planes * 4,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
-                UpBlock(
-                    self.conv,
-                    initial_planes * 4 + initial_planes * 2,
-                    initial_planes * 2,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
-                UpBlock(
-                    self.conv,
-                    initial_planes * 2 + initial_planes,
-                    initial_planes,
-                    self.conv_kwargs,
-                    bilinear,
-                ),
+                    self.dec_conv,
+                    initial_planes * 2**j + initial_planes * 2 ** (j - 1),
+                    initial_planes * 2 ** (j - 1),
+                    self.dec_conv_kwargs,
+                    upsample,
+                )
+                for j in range(self.num_layers, 0, -1)
             ]
         )
 
@@ -280,12 +242,11 @@ class UNet(nn.Module):
         x_residuals = []
 
         x = self.inc(x)
-        x_residuals.append(x)
 
         # Encoder
         for i in range(len(self.enc_modules)):
-            x = self.enc_modules[i](x)
             x_residuals.append(x)
+            x = self.enc_modules[i](x)
 
         # Decoder
         for j in range(len(self.dec_modules)):
