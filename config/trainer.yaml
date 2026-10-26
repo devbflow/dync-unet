@@ -1,6 +1,7 @@
 logger: true
 max_epochs: 1000
-max_time: 01:00:00:00
+max_steps: 50000
+max_time: 07:00:00:00
 num_sanity_val_steps: 2
 log_every_n_steps: 50
 default_root_dir: ./
@@ -15,18 +16,3 @@ callbacks:
       save_last: True
       save_top_k: 1
       every_n_epochs: 200
-  # - class_path: lightning.pytorch.callbacks.BatchSizeFinder
-  #   init_args:
-  #     mode: binsearch
-  #     steps_per_trial: 3
-  #     init_val: 8
-  # - class_path: lightning.pytorch.callbacks.EarlyStopping
-  #   init_args:
-  #     monitor: val_loss
-  #     patience: 3
-  # - class_path: lightning.pytorch.callbacks.LearningRateFinder
-  #   init_args:
-  #     min_lr: 1e-08
-  #     max_lr: 1
-  #     num_training_steps: 100
-  #     mode: exponential

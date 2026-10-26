@@ -248,8 +248,8 @@ class WHUOptSARDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.data_type = data_type
 
-        self.train_split = os.path.join(self.data_dir, "train.txt")
-        self.val_split = os.path.join(self.data_dir, "val.txt")
+        self.train_split = os.path.join(self.data_dir, "train_crops.txt")
+        self.val_split = os.path.join(self.data_dir, "val_crops.txt")
         self.labels_path = os.path.join(self.data_dir, "lbl")
 
     def setup(self, stage: str):

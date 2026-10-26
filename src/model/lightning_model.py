@@ -119,6 +119,7 @@ class UNetLightningModule(pl.LightningModule):
                     segment_target=segment_target,
                 ),
                 self.current_epoch,
+                batch_size=input_imgs.shape[0],
             )
         return loss
 
@@ -164,6 +165,7 @@ class UNetLightningModule(pl.LightningModule):
                     segment_target=segment_target,
                 ),
                 self.current_epoch,
+                batch_size=input_imgs.shape[0],
             )
 
         return loss
@@ -185,6 +187,7 @@ class UNetLightningModule(pl.LightningModule):
                     segment_pred=segment_images, input_images=input_imgs
                 ),
                 batch_idx,
+                batch_size=input_imgs.shape[0],
             )
 
     def predict_step(self, batch, batch_idx):
@@ -200,17 +203,14 @@ class UNetLightningModule(pl.LightningModule):
                 segment_pred=segment_images, input_images=input_imgs
             ),
             batch_idx,
+            batch_size=input_imgs.shape[0],
         )
 
-    def _log_images(self, mode, images, step):
-        if len(images.shape) == 4:
-            self.logger.experiment.add_images(
-                f"{mode}_image", images, step, dataformats="NHWC"
-            )
-        else:
-            self.logger.experiment.add_image(
-                f"{mode}_image", images, step, dataformats="HWC"
-            )
+    def _log_images(self, mode, images, step, batch_size: int):
+        # images shape: (3 * B, H, W, C) as uint8 numpy array
+        tensor = torch.from_numpy(images).permute(0, 3, 1, 2).float() / 255.0
+        grid = torchvision.utils.make_grid(tensor, nrow=batch_size, normalize=False)
+        self.logger.experiment.add_image(f"{mode}_image", grid, step)
 
     def _stack_segment_with_input(
         self,
